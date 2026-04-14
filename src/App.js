@@ -4,8 +4,8 @@ import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { sGet, UK, SSK } from './lib/storage';
-import { ADMIN } from './lib/theme';
+import { SSK } from './lib/storage';
+import { secretsApi } from './lib/api';
 import AuthScreen  from './screens/AuthScreen';
 import FeedScreen  from './screens/FeedScreen';
 import AdminScreen from './screens/AdminScreen';
@@ -21,15 +21,17 @@ export default function App() {
         const raw = await AsyncStorage.getItem(SSK);
         if (raw) {
           const s = JSON.parse(raw);
-          if (s.username === ADMIN.user) {
-            setSess(s); setLoad(false); return;
-          }
-          const users = await sGet(UK) || {};
-          const u = users[s.username];
-          if (u && !u.banned) {
-            setSess({ ...s, nsfwVerified: u.nsfwVerified || false });
-          } else {
+          if (!s?.token) {
             await AsyncStorage.removeItem(SSK);
+          } else {
+            try {
+              await secretsApi.list(s.token);
+              setSess(s);
+              setLoad(false);
+              return;
+            } catch {
+              await AsyncStorage.removeItem(SSK);
+            }
           }
         }
       } catch {}

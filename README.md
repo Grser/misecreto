@@ -1,92 +1,86 @@
 # MiSecreto — Expo SDK 54
 
-## IMPORTANTE: Por que fallaba antes
-pnpm usa "virtual store" con symlinks que Metro no puede seguir.
-La solucion: .npmrc con `node-linker=hoisted` hace que pnpm instale
-flat node_modules como npm. Esto ya esta configurado en este proyecto.
+## Instalación app móvil
 
-## Instalacion app movil
+Doble clic en `setup.bat` (instala dependencias y levanta Expo).
 
-Doble clic en setup.bat — hace todo automatico.
-
-O manual:
-```
+Manual:
+```bash
 rmdir /s /q node_modules
 del pnpm-lock.yaml
 pnpm install
 pnpm expo start --clear
 ```
 
-## Admin (modo local actual)
-Usuario: admin | Contrasena: admin123
+## Backend PHP + MariaDB (phpMyAdmin)
 
----
+La app (web + móvil) ya guarda **usuarios y posts en MariaDB** por API PHP (`backend/api.php`).
 
-## Backend PHP + MySQL (phpMyAdmin) listo para usar
+### 1) Variables de entorno requeridas en el servidor
 
-Te deje una API PHP en `backend/` para que solo tengas que editar la conexion y subirla a tu servidor.
+No dejes credenciales en archivos públicos. Configura estas variables en tu hosting:
 
-### 1) Que debes crear en tu servidor
-1. Crea una base de datos vacia en phpMyAdmin (ejemplo: `misecreto`).
-2. Sube toda la carpeta `backend/` a tu hosting (por ejemplo en `public_html/misecreto-api/`).
-3. Edita **solo** `backend/config.php` con tus datos reales:
-   - `host`
-   - `port`
-   - `name`
-   - `user`
-   - `pass`
+- `DB_HOST`
+- `DB_PORT` (ej: `3306`)
+- `DB_NAME`
+- `DB_USER`
+- `DB_PASS`
+- `APP_KEY` (mínimo 32 caracteres aleatorios)
+- `ALLOWED_ORIGINS` (lista separada por coma, ej: `https://app.tudominio.com,https://web.tudominio.com`)
+- `TOKEN_TTL_SECONDS` (opcional, por defecto 14 días)
 
-### 2) Creacion automatica de tablas
-No tienes que crear tablas a mano.
+### 2) Seguridad aplicada
 
-Cada vez que entre una peticion a `backend/api.php`, el sistema revisa y crea automaticamente (si no existen):
-- `users`
-- `secrets`
-- `secret_likes`
-- `comments`
-- `comment_likes`
+- Contraseñas con `password_hash()` / `password_verify()`.
+- Tokens firmados con HMAC SHA-256 + expiración.
+- CORS cerrado por allowlist (`ALLOWED_ORIGINS`).
+- Headers de endurecimiento (`X-Frame-Options`, `CSP`, `nosniff`, etc.).
+- Toda consulta a DB con `PDO` + prepared statements.
 
-Tambien crea automaticamente el admin inicial si no existe:
-- usuario: `admin`
-- password: `admin123`
+### 3) Endpoints
 
-### 3) Probar rapido desde navegador/Postman
-Health check:
-```
+Health:
+```http
 GET /backend/api.php?action=health
 ```
 
-Login admin:
+Registro:
+```http
+POST /backend/api.php?action=register
+Content-Type: application/json
+
+{"username":"usuario","password":"clave_segura"}
 ```
+
+Login:
+```http
 POST /backend/api.php?action=login
 Content-Type: application/json
 
-{
-  "username": "admin",
-  "password": "admin123"
-}
+{"username":"usuario","password":"clave_segura"}
 ```
 
-Crear secreto (requiere token Bearer del login):
-```
+Crear post:
+```http
 POST /backend/api.php?action=secrets.create
 Authorization: Bearer TU_TOKEN
 Content-Type: application/json
 
-{
-  "title": "Mi secreto",
-  "content": "Contenido",
-  "nsfw": false,
-  "color_idx": 2
-}
+{"title":"Secreto","content":"Texto","nsfw":false,"color_idx":2}
 ```
 
-Listar secretos:
-```
+Listar posts:
+```http
 GET /backend/api.php?action=secrets.list
 Authorization: Bearer TU_TOKEN
 ```
 
-### 4) Nota para conectar la app movil
-Hoy la app usa almacenamiento local (`AsyncStorage`).
-Si quieres, en el siguiente paso te dejo conectadas las pantallas de login/feed/admin para usar esta API PHP en lugar de local storage.
+## Conectar frontend
+
+Define en Expo:
+
+```bash
+EXPO_PUBLIC_API_URL=https://tu-dominio.com/backend/api.php
+```
+
+Si no la defines en web, intenta usar automáticamente `/<host>/backend/api.php`.
