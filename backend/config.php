@@ -2,11 +2,11 @@
 
 return [
     'db' => [
-        'host' => '127.0.0.1',
+        'host' => 'db.clawn.net',
         'port' => 3306,
         'name' => 'misecreto',
-        'user' => 'root',
-        'pass' => '',
+        'user' => 'conexiones',
+        'pass' => '1234',
         'charset' => 'utf8mb4',
     ],
 ];
