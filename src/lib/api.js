@@ -17,6 +17,9 @@ const userResponse = (user) => ({
   id: user.id,
   username: user.username,
   is_admin: user.isAdmin ? 1 : 0,
+  color: Number.isFinite(user.color) ? user.color : 0,
+  country: user.country || 'us',
+  nsfwVerified: !!user.nsfwVerified,
 });
 
 const getCurrentUserFromToken = async (token) => {
@@ -47,7 +50,7 @@ export const authApi = {
     };
   },
 
-  register: async (username, password) => {
+  register: async (username, password, { color, country } = {}) => {
     const clean = String(username || '').trim().toLowerCase();
     if (clean.length < 3 || String(password || '').length < 4) {
       throw new Error('Datos inválidos');
@@ -63,8 +66,8 @@ export const authApi = {
       username: clean,
       passwordHash: hashStr(String(password || '')),
       isAdmin: false,
-      color: 0,
-      country: 'us',
+      color: Number.isFinite(color) ? color : 0,
+      country: country || 'us',
       banned: false,
       nsfwVerified: false,
       createdAt: Date.now(),

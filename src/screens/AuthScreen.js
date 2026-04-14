@@ -34,10 +34,10 @@ export default function AuthScreen({ onLogin }) {
         username: res.user.username,
         userId: res.user.id,
         token: res.token,
-        color: selColor,
-        country: form.country,
+        color: Number.isFinite(res.user.color) ? res.user.color : selColor,
+        country: res.user.country || form.country || 'us',
         isAdmin: !!res.user.is_admin,
-        nsfwVerified: false,
+        nsfwVerified: !!res.user.nsfwVerified,
       };
       onLogin(s);
     } catch (e) {
@@ -53,15 +53,15 @@ export default function AuthScreen({ onLogin }) {
     if (!/^[a-z0-9_]+$/.test(u))    { setErr('Solo letras, números y _'); setBusy(false); return; }
     if (form.password.length < 6)    { setErr('Contraseña mín. 6 caracteres'); setBusy(false); return; }
     try {
-      const res = await authApi.register(u, form.password);
+      const res = await authApi.register(u, form.password, { color: selColor, country: form.country });
       const s = {
         username: res.user.username,
         userId: res.user.id,
         token: res.token,
-        color: selColor,
-        country: form.country,
+        color: Number.isFinite(res.user.color) ? res.user.color : selColor,
+        country: res.user.country || form.country || 'us',
         isAdmin: !!res.user.is_admin,
-        nsfwVerified: false,
+        nsfwVerified: !!res.user.nsfwVerified,
       };
       onLogin(s);
     } catch (e) {
