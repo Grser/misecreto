@@ -3,7 +3,7 @@ import React, { useState, useCallback } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, TextInput,
   StyleSheet, RefreshControl, Modal, Image, ScrollView,
-  Platform, Alert,
+  Platform, Alert, AppState,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -66,19 +66,20 @@ export default function FeedScreen({ session, onLogout, onOpenAdmin }) {
   const [duration, setDur]     = useState(0);
   const [showDur,  setShowDur] = useState(false);
   const [dbStatus, setDbStatus] = useState('checking');
+  const appStateRef = React.useRef(AppState.currentState);
 
   const isNsfw = tab === 'nsfw';
   const sk     = isNsfw ? NK : SK;
   const acc    = isNsfw ? '#c026d3' : T.blue;
 
   /* load & filter expired */
-  const load = useCallback(async () => {
-    setRefresh(true);
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setRefresh(true);
     const [raw, rawN] = await Promise.all([sGet(SK), sGet(NK)]);
     const strip = arr => cleanSecrets((arr || []).filter(s => !isExpired(s)));
     setSecrets(strip(raw));
     setNsfw(strip(rawN));
-    setRefresh(false);
+    if (!silent) setRefresh(false);
   }, []);
 
   React.useEffect(() => {
@@ -87,6 +88,23 @@ export default function FeedScreen({ session, onLogout, onOpenAdmin }) {
       const ok = await checkStorageConnection();
       setDbStatus(ok ? 'connected' : 'error');
     })();
+  }, [load]);
+
+  React.useEffect(() => {
+    const timer = setInterval(() => {
+      load(true);
+    }, 5000);
+
+    const sub = AppState.addEventListener('change', (nextState) => {
+      const wasBackground = appStateRef.current !== 'active';
+      if (wasBackground && nextState === 'active') load(true);
+      appStateRef.current = nextState;
+    });
+
+    return () => {
+      clearInterval(timer);
+      sub.remove();
+    };
   }, [load]);
 
   const update = (all, forNsfw) => {
