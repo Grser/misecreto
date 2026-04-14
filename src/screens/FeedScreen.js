@@ -9,7 +9,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { T, COUNTRIES, GRADIENTS } from '../lib/theme';
-import { sGet, sSet, SK, NK, uid, cleanSecrets, checkStorageConnection } from '../lib/storage';
+import { secretsApi, healthApi } from '../lib/api';
 import { CntBadge, Tag, ActBtn } from '../components/Atoms';
 import { SecretCard, NsfwCard } from '../components/SecretCard';
 import CommentSheet from '../components/CommentSheet';
@@ -42,7 +42,25 @@ const DURATION_OPTS = [
   { label: '7 días',     value: 10080 },
 ];
 
-const isExpired = (s) => s.expiresAt && Date.now() > s.expiresAt;
+const toSecret = (row) => ({
+  id: String(row.id),
+  text: row.content || '',
+  photo: null,
+  expiresAt: null,
+  durationMinutes: 0,
+  author: row.username,
+  color: Number(row.color_idx || 0),
+  country: 'us',
+  likes: Number(row.likes || 0),
+  dislikes: 0,
+  views: 0,
+  likedBy: [],
+  dislikedBy: [],
+  time: new Date(row.created_at).getTime(),
+  comments: [],
+  nsfw: Number(row.nsfw) === 1,
+  title: row.title || '',
+});
 
 /* ─── BOTTOM TABS (no Recientes/Top at top) ─────────────────────────────── */
 const BOTTOM_TABS = [
@@ -69,24 +87,32 @@ export default function FeedScreen({ session, onLogout, onOpenAdmin }) {
   const appStateRef = React.useRef(AppState.currentState);
 
   const isNsfw = tab === 'nsfw';
-  const sk     = isNsfw ? NK : SK;
   const acc    = isNsfw ? '#c026d3' : T.blue;
 
-  /* load & filter expired */
+  /* load from backend DB */
   const load = useCallback(async (silent = false) => {
     if (!silent) setRefresh(true);
-    const [raw, rawN] = await Promise.all([sGet(SK), sGet(NK)]);
-    const strip = arr => cleanSecrets((arr || []).filter(s => !isExpired(s)));
-    setSecrets(strip(raw));
-    setNsfw(strip(rawN));
+    try {
+      const res = await secretsApi.list(session.token);
+      const mapped = (res.items || []).map(toSecret);
+      setSecrets(mapped.filter((x) => !x.nsfw));
+      setNsfw(mapped.filter((x) => x.nsfw));
+      setDbStatus('connected');
+    } catch {
+      setDbStatus('error');
+    }
     if (!silent) setRefresh(false);
-  }, []);
+  }, [session.token]);
 
   React.useEffect(() => {
     load();
     (async () => {
-      const ok = await checkStorageConnection();
-      setDbStatus(ok ? 'connected' : 'error');
+      try {
+        await healthApi.check();
+        setDbStatus('connected');
+      } catch {
+        setDbStatus('error');
+      }
     })();
   }, [load]);
 
@@ -108,9 +134,8 @@ export default function FeedScreen({ session, onLogout, onOpenAdmin }) {
   }, [load]);
 
   const update = (all, forNsfw) => {
-    const c = cleanSecrets(all.filter(s => !isExpired(s)));
-    forNsfw ? setNsfw(c) : setSecrets(c);
-    if (active) setActive(c.find(x => x.id === active.id) || null);
+    forNsfw ? setNsfw(all) : setSecrets(all);
+    if (active) setActive(all.find(x => x.id === active.id) || null);
   };
 
   /* image picker */
@@ -144,47 +169,33 @@ export default function FeedScreen({ session, onLogout, onOpenAdmin }) {
     const hasPhoto = !!photo;
     if ((!hasText && !hasPhoto) || posting) return;
     setPosting(true);
-    const all     = await sGet(sk) || [];
-    const expires = duration > 0 ? Date.now() + duration * 60 * 1000 : null;
-    all.unshift({
-      id: uid(), text: draft.trim(), photo: photo || null,
-      expiresAt: expires, durationMinutes: duration,
-      author: session.username, color: session.color, country: session.country,
-      likes: 0, dislikes: 0, views: 0, likedBy: [], dislikedBy: [],
-      time: Date.now(), comments: [], nsfw: isNsfw,
-    });
-    await sSet(sk, all);
-    setDraft(''); removePhoto(); setPosting(false);
-    update(all, isNsfw);
+    try {
+      await secretsApi.create(session.token, {
+        title: isNsfw ? 'Secreto NSFW' : 'Secreto',
+        content: draft.trim() || '[imagen]',
+        nsfw: isNsfw,
+        color_idx: session.color || 0,
+      });
+      setDraft('');
+      removePhoto();
+      await load(true);
+    } catch (e) {
+      Alert.alert('No se pudo publicar', e.message || 'Error de servidor');
+    }
+    setPosting(false);
   };
 
-  /* like / dislike */
-  const toggleLike = async (id) => {
-    const all = await sGet(sk) || [];
-    const s = all.find(x => x.id === id); if (!s) return;
-    s.likedBy = s.likedBy || []; s.dislikedBy = s.dislikedBy || [];
-    const i = s.likedBy.indexOf(session.username);
-    if (i > -1) { s.likedBy.splice(i, 1); s.likes--; }
-    else { s.likedBy.push(session.username); s.likes++; const di = s.dislikedBy.indexOf(session.username); if (di > -1) { s.dislikedBy.splice(di, 1); s.dislikes--; } }
-    await sSet(sk, all); update(all, isNsfw);
+  /* likes/comentarios pendientes de endpoint */
+  const toggleLike = async () => {
+    Alert.alert('Próximamente', 'Los likes se conectarán al backend en el siguiente paso.');
   };
 
-  const toggleDislike = async (id) => {
-    const all = await sGet(SK) || [];
-    const s = all.find(x => x.id === id); if (!s) return;
-    s.likedBy = s.likedBy || []; s.dislikedBy = s.dislikedBy || [];
-    const i = s.dislikedBy.indexOf(session.username);
-    if (i > -1) { s.dislikedBy.splice(i, 1); s.dislikes--; }
-    else { s.dislikedBy.push(session.username); s.dislikes++; const li = s.likedBy.indexOf(session.username); if (li > -1) { s.likedBy.splice(li, 1); s.likes--; } }
-    await sSet(SK, all); update(all, false);
+  const toggleDislike = async () => {
+    Alert.alert('Próximamente', 'Los dislikes se conectarán al backend en el siguiente paso.');
   };
 
   const openComment = async (sec) => {
-    const all = await sGet(sk) || [];
-    const s = all.find(x => x.id === sec.id); if (!s) return;
-    s.views = (s.views || 0) + 1;
-    await sSet(sk, all); update(all, isNsfw);
-    setActive({ ...s });
+    setActive({ ...sec });
   };
 
   const list = getSorted();
@@ -363,7 +374,6 @@ export default function FeedScreen({ session, onLogout, onOpenAdmin }) {
       {active && (
         <CommentSheet
           secret={active} session={session}
-          storageKey={isNsfw ? NK : SK}
           onUpdate={all => update(all, isNsfw)}
           onClose={() => setActive(null)}
           nsfw={isNsfw}

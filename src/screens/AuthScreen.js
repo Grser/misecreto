@@ -5,8 +5,8 @@ import {
   KeyboardAvoidingView, Platform, StyleSheet, Alert,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { T, COUNTRIES, ADMIN } from '../lib/theme';
-import { sGet, sSet, hashStr, rndC, UK, SSK } from '../lib/storage';
+import { T, COUNTRIES } from '../lib/theme';
+import { authApi } from '../lib/api';
 import { Input, BtnPrimary, Card } from '../components/Atoms';
 
 const AVATAR_COUNT = 8;
@@ -28,17 +28,22 @@ export default function AuthScreen({ onLogin }) {
   const doLogin = async () => {
     setErr(''); setBusy(true);
     const u = form.username.trim().toLowerCase();
-    if (u === ADMIN.user && form.password === ADMIN.pass) {
-      const s = { username: ADMIN.user, color: 4, country: 'us', isAdmin: true };
-      onLogin(s); setBusy(false); return;
+    try {
+      const res = await authApi.login(u, form.password);
+      const s = {
+        username: res.user.username,
+        userId: res.user.id,
+        token: res.token,
+        color: selColor,
+        country: form.country,
+        isAdmin: !!res.user.is_admin,
+        nsfwVerified: false,
+      };
+      onLogin(s);
+    } catch (e) {
+      setErr(e.message || 'No se pudo iniciar sesión');
     }
-    const users = await sGet(UK) || {};
-    const ud = users[u];
-    if (!ud)                              { setErr('Usuario no encontrado'); setBusy(false); return; }
-    if (ud.passHash !== hashStr(form.password)) { setErr('Contraseña incorrecta'); setBusy(false); return; }
-    if (ud.banned)                        { setErr('Cuenta suspendida'); setBusy(false); return; }
-    const s = { username: u, color: ud.color, country: ud.country, isAdmin: false, nsfwVerified: ud.nsfwVerified || false };
-    onLogin(s); setBusy(false);
+    setBusy(false);
   };
 
   const doRegister = async () => {
@@ -47,16 +52,22 @@ export default function AuthScreen({ onLogin }) {
     if (u.length < 3)                { setErr('Mínimo 3 caracteres'); setBusy(false); return; }
     if (!/^[a-z0-9_]+$/.test(u))    { setErr('Solo letras, números y _'); setBusy(false); return; }
     if (form.password.length < 6)    { setErr('Contraseña mín. 6 caracteres'); setBusy(false); return; }
-    if (u === ADMIN.user)            { setErr('Nombre no disponible'); setBusy(false); return; }
-    const users = await sGet(UK) || {};
-    if (users[u])                    { setErr('Ese usuario ya existe'); setBusy(false); return; }
-    users[u] = {
-      passHash: hashStr(form.password), color: selColor,
-      country: form.country, createdAt: Date.now(), banned: false, nsfwVerified: false,
-    };
-    await sSet(UK, users);
-    const s = { username: u, color: selColor, country: form.country, isAdmin: false, nsfwVerified: false };
-    onLogin(s); setBusy(false);
+    try {
+      const res = await authApi.register(u, form.password);
+      const s = {
+        username: res.user.username,
+        userId: res.user.id,
+        token: res.token,
+        color: selColor,
+        country: form.country,
+        isAdmin: !!res.user.is_admin,
+        nsfwVerified: false,
+      };
+      onLogin(s);
+    } catch (e) {
+      setErr(e.message || 'No se pudo registrar');
+    }
+    setBusy(false);
   };
 
   const selCountry = cOf => COUNTRIES.find(c => c.code === cOf) || COUNTRIES[0];

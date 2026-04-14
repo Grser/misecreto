@@ -13,6 +13,16 @@ function appConfig(): array
     return $cfg;
 }
 
+function appKey(): string
+{
+    $key = appConfig()['security']['app_key'] ?? '';
+    if (strlen($key) < 32) {
+        jsonResponse(['ok' => false, 'error' => 'Configuración insegura: APP_KEY inválida'], 500);
+    }
+
+    return $key;
+}
+
 function db(): PDO
 {
     static $pdo;
@@ -22,6 +32,10 @@ function db(): PDO
     }
 
     $cfg = appConfig()['db'];
+    if (($cfg['user'] ?? '') === '' || ($cfg['pass'] ?? '') === '') {
+        jsonResponse(['ok' => false, 'error' => 'Configura DB_USER y DB_PASS en el entorno'], 500);
+    }
+
     $dsn = sprintf(
         'mysql:host=%s;port=%d;dbname=%s;charset=%s',
         $cfg['host'],
@@ -100,18 +114,6 @@ function ensureSchema(PDO $pdo): void
     foreach ($queries as $sql) {
         $pdo->exec($sql);
     }
-
-    $stmt = $pdo->prepare('SELECT id FROM users WHERE username = :username LIMIT 1');
-    $stmt->execute(['username' => 'admin']);
-    if (!$stmt->fetch()) {
-        $insert = $pdo->prepare(
-            'INSERT INTO users (username, password_hash, is_admin) VALUES (:username, :password_hash, 1)'
-        );
-        $insert->execute([
-            'username' => 'admin',
-            'password_hash' => password_hash('admin123', PASSWORD_DEFAULT),
-        ]);
-    }
 }
 
 function jsonInput(): array
@@ -133,6 +135,15 @@ function jsonResponse(array $data, int $code = 200): void
     exit;
 }
 
+function makeToken(int $userId): string
+{
+    $ttl = max(300, (int) (appConfig()['security']['token_ttl'] ?? 1209600));
+    $exp = time() + $ttl;
+    $payload = $userId . ':' . $exp;
+    $sig = hash_hmac('sha256', $payload, appKey());
+    return rtrim(strtr(base64_encode($payload . ':' . $sig), '+/', '-_'), '=');
+}
+
 function bearerUserId(): ?int
 {
     $auth = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
@@ -145,17 +156,31 @@ function bearerUserId(): ?int
         return null;
     }
 
-    $parts = explode(':', base64_decode($token) ?: '');
-    if (count($parts) !== 2 || $parts[0] !== 'uid') {
+    $decoded = base64_decode(strtr($token, '-_', '+/'), true);
+    if (!$decoded) {
         return null;
     }
 
-    return ctype_digit($parts[1]) ? (int) $parts[1] : null;
-}
+    $parts = explode(':', $decoded);
+    if (count($parts) !== 3) {
+        return null;
+    }
 
-function makeToken(int $userId): string
-{
-    return base64_encode('uid:' . $userId);
+    [$uid, $exp, $sig] = $parts;
+    if (!ctype_digit($uid) || !ctype_digit($exp)) {
+        return null;
+    }
+
+    if ((int) $exp < time()) {
+        return null;
+    }
+
+    $expected = hash_hmac('sha256', $uid . ':' . $exp, appKey());
+    if (!hash_equals($expected, $sig)) {
+        return null;
+    }
+
+    return (int) $uid;
 }
 
 function requireAuth(PDO $pdo): array
@@ -176,9 +201,25 @@ function requireAuth(PDO $pdo): array
     return $user;
 }
 
+function securityHeaders(): void
+{
+    header('X-Content-Type-Options: nosniff');
+    header('X-Frame-Options: DENY');
+    header('Referrer-Policy: no-referrer');
+    header("Content-Security-Policy: default-src 'none'; frame-ancestors 'none'");
+}
+
 function cors(): void
 {
-    header('Access-Control-Allow-Origin: *');
+    securityHeaders();
+
+    $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+    $allowed = appConfig()['security']['allowed_origins'] ?? [];
+    if ($origin !== '' && in_array($origin, $allowed, true)) {
+        header('Access-Control-Allow-Origin: ' . $origin);
+        header('Vary: Origin');
+    }
+
     header('Access-Control-Allow-Headers: Content-Type, Authorization');
     header('Access-Control-Allow-Methods: GET, POST, DELETE, OPTIONS');
 
