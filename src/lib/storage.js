@@ -48,3 +48,16 @@ export const cleanSecrets = (arr) =>
       replies: (c.replies || []).map(r => ({ ...r, likedBy: r.likedBy || [] })),
     })),
   }));
+
+export const checkStorageConnection = async () => {
+  const pingKey = '__ms-db-ping__';
+  const pingVal = Date.now().toString();
+  try {
+    await AsyncStorage.setItem(pingKey, pingVal);
+    const got = await AsyncStorage.getItem(pingKey);
+    await AsyncStorage.removeItem(pingKey);
+    return got === pingVal;
+  } catch {
+    return false;
+  }
+};
