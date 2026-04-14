@@ -5,12 +5,11 @@ const normalizeApiBase = (rawBase) => {
   const clean = String(rawBase).trim().replace(/\/+$/, '');
   if (!clean) return null;
 
-  // Si te pasan solo dominio (https://mi-api.com), agregamos la ruta esperada.
-  if (!clean.includes('api.php')) {
-    return `${clean}/backend/api.php`;
-  }
+  if (clean.endsWith('api.php')) return clean;
+  if (clean.endsWith('/backend')) return `${clean}/api.php`;
 
-  return clean;
+  // Si te pasan solo dominio (https://mi-api.com), agregamos la ruta esperada.
+  return `${clean}/backend/api.php`;
 };
 
 const WEB_DEFAULT = typeof window !== 'undefined' && window?.location
@@ -21,7 +20,10 @@ export const API_BASE = normalizeApiBase(process.env.EXPO_PUBLIC_API_URL)
   || WEB_DEFAULT
   || 'http://127.0.0.1/backend/api.php';
 
-const buildUrl = (action) => `${API_BASE}?action=${encodeURIComponent(action)}`;
+const buildUrl = (action) => {
+  const separator = API_BASE.includes('?') ? '&' : '?';
+  return `${API_BASE}${separator}action=${encodeURIComponent(action)}`;
+};
 
 export async function apiRequest(action, { method = 'GET', token, body } = {}) {
   const headers = { 'Content-Type': 'application/json' };
@@ -40,7 +42,8 @@ export async function apiRequest(action, { method = 'GET', token, body } = {}) {
 
   let payload = null;
   try {
-    payload = await res.json();
+    const rawText = await res.text();
+    payload = rawText ? JSON.parse(rawText) : {};
   } catch {
     throw new Error('Respuesta inválida del servidor. Verifica que EXPO_PUBLIC_API_URL apunte a /backend/api.php.');
   }
