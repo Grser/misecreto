@@ -1,0 +1,37 @@
+{
+  "name": "misecreto",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "expo start --clear",
+    "android": "expo start --android --clear",
+    "ios": "expo start --ios --clear",
+    "web": "expo start --web --clear"
+  },
+  "dependencies": {
+    "@babel/runtime": "^7.25.0",
+    "@expo/metro-runtime": "~6.1.2",
+    "@expo/vector-icons": "^15.1.1",
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "@supabase/supabase-js": "^2.103.0",
+    "expo": "~54.0.0",
+    "expo-constants": "~18.0.13",
+    "expo-font": "~14.0.11",
+    "expo-image-picker": "~17.0.10",
+    "expo-status-bar": "~3.0.9",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "react-native": "0.81.5",
+    "react-native-safe-area-context": "5.6.2",
+    "react-native-web": "~0.21.2"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.25.0",
+    "babel-preset-expo": "~54.0.10"
+  },
+  "pnpm": {
+    "nodeLinker": "hoisted"
+  },
+  "private": true,
+  "packageManager": "pnpm@9.15.9+sha512.68046141893c66fad01c079231128e9afb89ef87e2691d69e4d40eee228988295fd4682181bae55b58418c3a253bde65a505ec7c5f9403ece5cc3cd37dcf2531"
+}

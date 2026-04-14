@@ -1,0 +1,29 @@
+{
+  "expo": {
+    "name": "MiSecreto",
+    "slug": "misecreto",
+    "version": "1.0.0",
+    "sdkVersion": "54.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#060910",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.misecreto.app"
+    },
+    "android": {
+      "package": "com.misecreto.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#060910"
+      }
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-image-picker",
+      "expo-font"
+    ],
+    "scheme": "misecreto"
+  }
+}
