@@ -61,14 +61,22 @@ const getCandidateApiBases = () => {
       push(`${web.origin}/${web.firstSegment}/backend/api.php`);
     }
 
-    // 4) Desarrollo local típico (Expo web en :19006 y backend en Apache :80).
+    // 4) Desarrollo local típico: probamos http/https y puertos comunes de Apache/PHP.
     if (isLocalWebHost) {
-      push(`${web.protocol}//localhost/backend/api.php`);
-      push(`${web.protocol}//127.0.0.1/backend/api.php`);
-      push(`${web.protocol}//localhost/misecreto/backend/api.php`);
-      push(`${web.protocol}//127.0.0.1/misecreto/backend/api.php`);
-      push(`${web.protocol}//localhost:8000/backend/api.php`);
-      push(`${web.protocol}//127.0.0.1:8000/backend/api.php`);
+      const protocols = [...new Set([web.protocol, 'http:', 'https:'])].filter(Boolean);
+      const hosts = ['localhost', '127.0.0.1'];
+      const roots = ['', '/misecreto'];
+      const ports = ['', ':8000', ':8080', ':8888'];
+
+      for (const protocol of protocols) {
+        for (const host of hosts) {
+          for (const port of ports) {
+            for (const root of roots) {
+              push(`${protocol}//${host}${port}${root}/backend/api.php`);
+            }
+          }
+        }
+      }
     }
   }
 
@@ -76,6 +84,8 @@ const getCandidateApiBases = () => {
   push('http://10.0.2.2/backend/api.php');
   if (!web || isLocalWebHost) {
     push('http://127.0.0.1/backend/api.php');
+    push('http://127.0.0.1:8000/backend/api.php');
+    push('http://127.0.0.1:8080/backend/api.php');
   }
 
   return out;
@@ -239,9 +249,10 @@ export async function apiRequest(action, options = {}) {
     }
   }
 
+  const listed = tried.length ? tried : basesToTry.map((base) => withAction(base, action));
   throw new Error(
-    `No se pudo conectar al servidor. URLs probadas: ${tried.join(' | ')}. `
-    + 'Configura EXPO_PUBLIC_API_URL con la URL exacta de tu backend/api.php.'
+    `No se pudo conectar al servidor. URLs probadas: ${listed.join(' | ')}. `
+    + 'Configura EXPO_PUBLIC_API_URL con la URL exacta de tu backend/api.php y verifica que el servidor PHP esté encendido.'
   );
 }
 
