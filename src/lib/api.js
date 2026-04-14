@@ -1,5 +1,6 @@
 // src/lib/api.js
 import { sGet, sSet, UK, SK, NK, uid, hashStr, cleanSecrets, checkStorageConnection } from './storage';
+import { normalizeUsername, validateRegisterInput } from './validation';
 
 const nowIso = () => new Date().toISOString();
 
@@ -32,7 +33,7 @@ const getCurrentUserFromToken = async (token) => {
 
 export const authApi = {
   login: async (username, password) => {
-    const clean = String(username || '').trim().toLowerCase();
+    const clean = normalizeUsername(username);
     const users = normalizeUsers(await sGet(UK));
     const user = users[clean];
 
@@ -48,9 +49,10 @@ export const authApi = {
   },
 
   register: async (username, password) => {
-    const clean = String(username || '').trim().toLowerCase();
-    if (clean.length < 3 || String(password || '').length < 4) {
-      throw new Error('Datos inválidos');
+    const clean = normalizeUsername(username);
+    const validationError = validateRegisterInput(clean, password);
+    if (validationError) {
+      throw new Error(validationError);
     }
 
     const users = normalizeUsers(await sGet(UK));

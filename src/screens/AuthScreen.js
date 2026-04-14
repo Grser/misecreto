@@ -8,6 +8,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Feather } from '@expo/vector-icons';
 import { T, COUNTRIES } from '../lib/theme';
 import { authApi } from '../lib/api';
+import { normalizeUsername, validateRegisterInput } from '../lib/validation';
 import { Input, BtnPrimary, Card } from '../components/Atoms';
 import { SSK, UK, SK, NK } from '../lib/storage';
 
@@ -29,8 +30,8 @@ export default function AuthScreen({ onLogin }) {
   const GRAD_COLORS = ['#ec4899','#0ea5e9','#10b981','#f59e0b','#8b5cf6','#d946ef','#3b82f6','#84cc16'];
 
   const doLogin = async () => {
-    setErr(''); setNote(''); setBusy(true);
-    const u = form.username.trim().toLowerCase();
+    setErr(''); setBusy(true);
+    const u = normalizeUsername(form.username);
     try {
       const res = await authApi.login(u, form.password);
       const s = {
@@ -50,11 +51,10 @@ export default function AuthScreen({ onLogin }) {
   };
 
   const doRegister = async () => {
-    setErr(''); setNote(''); setBusy(true);
-    const u = form.username.trim().toLowerCase();
-    if (u.length < 3)                { setErr('Mínimo 3 caracteres'); setBusy(false); return; }
-    if (!/^[a-z0-9_]+$/.test(u))    { setErr('Solo letras, números y _'); setBusy(false); return; }
-    if (form.password.length < 6)    { setErr('Contraseña mín. 6 caracteres'); setBusy(false); return; }
+    setErr(''); setBusy(true);
+    const u = normalizeUsername(form.username);
+    const validationError = validateRegisterInput(u, form.password);
+    if (validationError) { setErr(validationError); setBusy(false); return; }
     try {
       const res = await authApi.register(u, form.password);
       const s = {
