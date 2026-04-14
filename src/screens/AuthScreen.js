@@ -7,6 +7,7 @@ import {
 import { Feather } from '@expo/vector-icons';
 import { T, COUNTRIES } from '../lib/theme';
 import { authApi } from '../lib/api';
+import { normalizeUsername, validateRegisterInput } from '../lib/validation';
 import { Input, BtnPrimary, Card } from '../components/Atoms';
 
 const AVATAR_COUNT = 8;
@@ -27,7 +28,7 @@ export default function AuthScreen({ onLogin }) {
 
   const doLogin = async () => {
     setErr(''); setBusy(true);
-    const u = form.username.trim().toLowerCase();
+    const u = normalizeUsername(form.username);
     try {
       const res = await authApi.login(u, form.password);
       const s = {
@@ -48,10 +49,9 @@ export default function AuthScreen({ onLogin }) {
 
   const doRegister = async () => {
     setErr(''); setBusy(true);
-    const u = form.username.trim().toLowerCase();
-    if (u.length < 3)                { setErr('Mínimo 3 caracteres'); setBusy(false); return; }
-    if (!/^[a-z0-9_]+$/.test(u))    { setErr('Solo letras, números y _'); setBusy(false); return; }
-    if (form.password.length < 6)    { setErr('Contraseña mín. 6 caracteres'); setBusy(false); return; }
+    const u = normalizeUsername(form.username);
+    const validationError = validateRegisterInput(u, form.password);
+    if (validationError) { setErr(validationError); setBusy(false); return; }
     try {
       const res = await authApi.register(u, form.password);
       const s = {
