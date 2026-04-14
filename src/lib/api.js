@@ -1,6 +1,6 @@
 // src/lib/api.js
 const WEB_DEFAULT = typeof window !== 'undefined' && window?.location
-  ? `${window.location.protocol}//${window.location.hostname}/backend/api.php`
+  ? `${window.location.origin}/backend/api.php`
   : null;
 
 export const API_BASE = process.env.EXPO_PUBLIC_API_URL || WEB_DEFAULT || 'http://127.0.0.1/backend/api.php';

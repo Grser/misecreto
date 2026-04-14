@@ -29,6 +29,11 @@ No dejes credenciales en archivos públicos. Configura estas variables en tu hos
 - `ALLOWED_ORIGINS` (lista separada por coma, ej: `https://app.tudominio.com,https://web.tudominio.com`)
 - `TOKEN_TTL_SECONDS` (opcional, por defecto 14 días)
 
+### 1.1) Tablas automáticas (y SQL para importar)
+
+- Al primer request a `backend/api.php`, el backend ejecuta `ensureSchema()` y crea las tablas si no existen.
+- Si prefieres importarlas manualmente en phpMyAdmin, usa `backend/schema.sql`.
+
 ### 2) Seguridad aplicada
 
 - Contraseñas con `password_hash()` / `password_verify()`.
