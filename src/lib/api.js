@@ -1,105 +1,149 @@
 // src/lib/api.js
+import { sGet, sSet, UK, SK, NK, uid, hashStr, cleanSecrets, checkStorageConnection } from './storage';
 
-const normalizeApiBase = (rawBase) => {
-  if (!rawBase) return null;
-  const clean = String(rawBase).trim().replace(/\/+$/, '');
-  if (!clean) return null;
-  if (clean.endsWith('api.php')) return clean;
-  if (clean.endsWith('/backend')) return `${clean}/api.php`;
-  return `${clean}/backend/api.php`;
+const nowIso = () => new Date().toISOString();
+
+const normalizeUsers = (users) => users || {};
+
+const normalizeToken = (token) => {
+  if (!token || typeof token !== 'string') return null;
+  const parts = token.split(':');
+  if (parts.length !== 2 || parts[0] !== 'local') return null;
+  const id = Number(parts[1]);
+  return Number.isFinite(id) ? id : null;
 };
 
-const resolveApiBase = () => {
-  const envBase = normalizeApiBase(process.env.EXPO_PUBLIC_API_URL);
-  if (envBase) return envBase;
+const userResponse = (user) => ({
+  id: user.id,
+  username: user.username,
+  is_admin: user.isAdmin ? 1 : 0,
+});
 
-  if (typeof window !== 'undefined' && window?.location?.origin) {
-    return `${window.location.origin}/backend/api.php`;
-  }
+const getCurrentUserFromToken = async (token) => {
+  const userId = normalizeToken(token);
+  if (!userId) throw new Error('No autorizado');
 
-  return 'http://127.0.0.1/backend/api.php';
+  const users = normalizeUsers(await sGet(UK));
+  const user = Object.values(users).find((u) => Number(u.id) === userId);
+  if (!user) throw new Error('Usuario inválido');
+
+  return user;
 };
-
-const API_BASE = resolveApiBase();
-
-const withAction = (base, action) => {
-  const separator = base.includes('?') ? '&' : '?';
-  return `${base}${separator}action=${encodeURIComponent(action)}`;
-};
-
-const fetchWithTimeout = async (url, init = {}, timeoutMs = 9000) => {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    return await fetch(url, { ...init, signal: controller.signal });
-  } finally {
-    clearTimeout(timer);
-  }
-};
-
-async function request(action, options = {}) {
-  const { method = 'GET', token, body } = options;
-  const headers = { 'Content-Type': 'application/json' };
-  if (token) headers.Authorization = `Bearer ${token}`;
-
-  const url = withAction(API_BASE, action);
-  const res = await fetchWithTimeout(url, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
-  });
-
-  return { res, url };
-}
-
-const parseJsonPayload = async (res, meta) => {
-  const rawText = await res.text();
-  if (!rawText) return {};
-
-  try {
-    return JSON.parse(rawText);
-  } catch (error) {
-    const parseError = new Error('Respuesta inválida del servidor. Verifica que la URL del backend apunte a /backend/api.php.');
-    parseError.code = 'API_PARSE_ERROR';
-    throw parseError;
-  }
-};
-
-export async function apiRequest(action, options = {}) {
-  try {
-    const { res, url } = await request(action, options);
-    const payload = await parseJsonPayload(res, { action, method: options?.method || 'GET', url });
-
-    if (res.ok && payload?.ok !== false) {
-      return payload;
-    }
-
-    throw new Error(payload?.error || `Error HTTP ${res.status}`);
-  } catch (error) {
-    if (error?.code === 'API_PARSE_ERROR') {
-      throw error;
-    }
-    if (/aborted|network|failed|load|connection/i.test(error?.message || '')) {
-      throw new Error(
-        `No se pudo conectar al servidor (${API_BASE}). `
-        + 'Asegúrate de que el backend PHP esté ejecutándose y que EXPO_PUBLIC_API_URL sea correcta.'
-      );
-    }
-    throw error;
-  }
-}
 
 export const authApi = {
-  login: (username, password) => apiRequest('login', { method: 'POST', body: { username, password } }),
-  register: (username, password) => apiRequest('register', { method: 'POST', body: { username, password } }),
+  login: async (username, password) => {
+    const clean = String(username || '').trim().toLowerCase();
+    const users = normalizeUsers(await sGet(UK));
+    const user = users[clean];
+
+    if (!user || user.passwordHash !== hashStr(String(password || ''))) {
+      throw new Error('Credenciales inválidas');
+    }
+
+    return {
+      ok: true,
+      token: `local:${user.id}`,
+      user: userResponse(user),
+    };
+  },
+
+  register: async (username, password) => {
+    const clean = String(username || '').trim().toLowerCase();
+    if (clean.length < 3 || String(password || '').length < 4) {
+      throw new Error('Datos inválidos');
+    }
+
+    const users = normalizeUsers(await sGet(UK));
+    if (users[clean]) {
+      throw new Error('Usuario ya existe');
+    }
+
+    const user = {
+      id: Date.now(),
+      username: clean,
+      passwordHash: hashStr(String(password || '')),
+      isAdmin: false,
+      color: 0,
+      country: 'us',
+      banned: false,
+      nsfwVerified: false,
+      createdAt: Date.now(),
+    };
+
+    users[clean] = user;
+    await sSet(UK, users);
+
+    return {
+      ok: true,
+      token: `local:${user.id}`,
+      user: userResponse(user),
+    };
+  },
 };
 
 export const secretsApi = {
-  list: (token) => apiRequest('secrets.list', { token }),
-  create: (token, data) => apiRequest('secrets.create', { method: 'POST', token, body: data }),
+  list: async (token) => {
+    const user = await getCurrentUserFromToken(token);
+    const sfw = cleanSecrets(await sGet(SK) || []);
+    const nsfw = cleanSecrets(await sGet(NK) || []);
+    const all = [...sfw, ...nsfw];
+
+    const items = all
+      .slice()
+      .sort((a, b) => Number(b.time || 0) - Number(a.time || 0))
+      .map((row) => ({
+        id: row.id,
+        title: row.title || 'Secreto',
+        content: row.text || '',
+        nsfw: row.nsfw ? 1 : 0,
+        color_idx: Number(row.color || 0),
+        created_at: row.time ? new Date(row.time).toISOString() : nowIso(),
+        username: row.author || user.username,
+        likes: Number(row.likes || 0),
+      }));
+
+    return { ok: true, user: userResponse(user), items };
+  },
+
+  create: async (token, data) => {
+    const user = await getCurrentUserFromToken(token);
+    const content = String(data?.content || '').trim();
+    const title = String(data?.title || 'Secreto').trim() || 'Secreto';
+    if (!content) throw new Error('Título y contenido son obligatorios');
+
+    const targetKey = data?.nsfw ? NK : SK;
+    const list = cleanSecrets(await sGet(targetKey) || []);
+    const id = uid();
+
+    list.unshift({
+      id,
+      text: content,
+      photo: null,
+      expiresAt: null,
+      durationMinutes: 0,
+      author: user.username,
+      color: Number(data?.color_idx || 0),
+      country: 'us',
+      likes: 0,
+      dislikes: 0,
+      views: 0,
+      likedBy: [],
+      dislikedBy: [],
+      time: Date.now(),
+      comments: [],
+      nsfw: !!data?.nsfw,
+      title,
+    });
+
+    await sSet(targetKey, list);
+    return { ok: true, id };
+  },
 };
 
 export const healthApi = {
-  check: () => apiRequest('health'),
+  check: async () => {
+    const ok = await checkStorageConnection();
+    if (!ok) throw new Error('No se pudo conectar a la base local');
+    return { ok: true, message: 'Base local conectada' };
+  },
 };

@@ -12,97 +12,38 @@ pnpm install
 pnpm expo start --clear
 ```
 
-## Backend PHP + MariaDB (phpMyAdmin)
+## Estado actual de datos
 
-La app (web + móvil) ya guarda **usuarios y posts en MariaDB** por API PHP (`backend/api.php`).
+Se eliminó la capa de API para la app móvil/web.
 
-### 1) Variables de entorno requeridas en el servidor
+- **Autenticación y posts**: ahora funcionan en almacenamiento local (`AsyncStorage`).
+- **Backend PHP**: `backend/api.php` quedó como verificación mínima de conexión a DB (ping básico con PDO).
 
-No dejes credenciales en archivos públicos. Configura estas variables en tu hosting:
+## Verificar conexión básica a DB
+
+```http
+GET /backend/api.php
+```
+
+Respuesta esperada:
+
+```json
+{
+  "ok": true,
+  "message": "Conexión básica a DB activa",
+  "db": {
+    "connected": true,
+    "ping": true
+  }
+}
+```
+
+## Variables de entorno para DB (backend PHP)
 
 - `DB_HOST`
-- `DB_PORT` (ej: `3306`)
+- `DB_PORT`
 - `DB_NAME`
 - `DB_USER`
 - `DB_PASS`
-- `APP_KEY` (mínimo 32 caracteres aleatorios)
-- `ALLOWED_ORIGINS` (lista separada por coma, ej: `https://app.tudominio.com,https://web.tudominio.com`)
-- `TOKEN_TTL_SECONDS` (opcional, por defecto 14 días)
 
-### 1.1) Tablas automáticas (y SQL para importar)
-
-- Al primer request a `backend/api.php`, el backend ejecuta `ensureSchema()` y crea las tablas si no existen.
-- Si prefieres importarlas manualmente en phpMyAdmin, usa `backend/schema.sql`.
-
-### 2) Seguridad aplicada
-
-- Contraseñas con `password_hash()` / `password_verify()`.
-- Tokens firmados con HMAC SHA-256 + expiración.
-- CORS cerrado por allowlist (`ALLOWED_ORIGINS`).
-- Headers de endurecimiento (`X-Frame-Options`, `CSP`, `nosniff`, etc.).
-- Toda consulta a DB con `PDO` + prepared statements.
-
-### 3) Endpoints
-
-Health:
-```http
-GET /backend/api.php?action=health
-```
-
-Registro:
-```http
-POST /backend/api.php?action=register
-Content-Type: application/json
-
-{"username":"usuario","password":"clave_segura"}
-```
-
-Login:
-```http
-POST /backend/api.php?action=login
-Content-Type: application/json
-
-{"username":"usuario","password":"clave_segura"}
-```
-
-Crear post:
-```http
-POST /backend/api.php?action=secrets.create
-Authorization: Bearer TU_TOKEN
-Content-Type: application/json
-
-{"title":"Secreto","content":"Texto","nsfw":false,"color_idx":2}
-```
-
-Listar posts:
-```http
-GET /backend/api.php?action=secrets.list
-Authorization: Bearer TU_TOKEN
-```
-
-## Conectar frontend
-
-Define en Expo:
-
-```bash
-EXPO_PUBLIC_API_URL=https://tu-dominio.com/backend/api.php
-```
-
-También acepta solo el dominio/base (`https://tu-dominio.com`) y la app agregará `/backend/api.php` automáticamente.
-
-Si no la defines en web, intenta usar automáticamente `/<host>/backend/api.php`.
-
-### Detección automática de backend (nuevo)
-
-Si no defines `EXPO_PUBLIC_API_URL`, la app ahora prueba varias rutas comunes y se queda con la que responda:
-
-- `https://<host-actual>/backend/api.php`
-- `https://<host-actual>/<primera-subruta>/backend/api.php`
-- En local web: `localhost` / `127.0.0.1` con `/backend/api.php`, `/misecreto/backend/api.php` y puerto `:8000`
-- En Android emulador: `http://10.0.2.2/backend/api.php`
-
-Aun así, **lo recomendado** para evitar ambigüedades es setear siempre:
-
-```bash
-EXPO_PUBLIC_API_URL=https://tu-dominio.com/backend/api.php
-```
+> Nota: si el backend no necesita exponer errores detallados en producción, ajusta el manejo de excepciones antes de desplegar.
