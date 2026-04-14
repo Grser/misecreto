@@ -1,5 +1,6 @@
 // src/lib/api.js
 import { sGet, sSet, UK, SK, NK, uid, hashStr, cleanSecrets, checkStorageConnection } from './storage';
+import { normalizeUsername, validateRegisterInput } from './validation';
 
 const nowIso = () => new Date().toISOString();
 
@@ -35,7 +36,7 @@ const getCurrentUserFromToken = async (token) => {
 
 export const authApi = {
   login: async (username, password) => {
-    const clean = String(username || '').trim().toLowerCase();
+    const clean = normalizeUsername(username);
     const users = normalizeUsers(await sGet(UK));
     const user = users[clean];
 
@@ -81,6 +82,45 @@ export const authApi = {
       token: `local:${user.id}`,
       user: userResponse(user),
     };
+  },
+
+  resetLocalUser: async (username, newPassword) => {
+    const clean = String(username || '').trim().toLowerCase();
+    const nextPass = String(newPassword || '');
+    if (!clean || !nextPass) {
+      throw new Error('Datos inválidos');
+    }
+
+    const users = normalizeUsers(await sGet(UK));
+    const user = users[clean];
+    if (!user) {
+      throw new Error('Usuario no encontrado');
+    }
+
+    users[clean] = {
+      ...user,
+      passwordHash: hashStr(nextPass),
+    };
+    await sSet(UK, users);
+
+    return { ok: true };
+  },
+
+  deleteLocalUser: async (username) => {
+    const clean = String(username || '').trim().toLowerCase();
+    if (!clean) {
+      throw new Error('Datos inválidos');
+    }
+
+    const users = normalizeUsers(await sGet(UK));
+    if (!users[clean]) {
+      throw new Error('Usuario no encontrado');
+    }
+
+    delete users[clean];
+    await sSet(UK, users);
+
+    return { ok: true };
   },
 };
 
