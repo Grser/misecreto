@@ -40,10 +40,18 @@ const getCandidateApiBases = () => {
     out.push(normalized);
   };
 
-  // 1) Valor explícito del entorno, siempre prioridad máxima.
-  push(process.env.EXPO_PUBLIC_API_URL);
-
   const web = getWebRuntimeContext();
+  const isLocalWebHost = web && (web.hostname === 'localhost' || web.hostname === '127.0.0.1');
+
+  // 1) Valor explícito del entorno, prioridad máxima salvo localhost en web remota.
+  const envBase = normalizeApiBase(process.env.EXPO_PUBLIC_API_URL);
+  if (envBase) {
+    const pointsToLocalhost = /\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?\b/i.test(envBase);
+    if (!pointsToLocalhost || !web || isLocalWebHost) {
+      push(envBase);
+    }
+  }
+
   if (web) {
     // 2) Mismo host desde donde corre la web.
     push(`${web.origin}/backend/api.php`);
@@ -54,7 +62,7 @@ const getCandidateApiBases = () => {
     }
 
     // 4) Desarrollo local típico (Expo web en :19006 y backend en Apache :80).
-    if (web.hostname === 'localhost' || web.hostname === '127.0.0.1') {
+    if (isLocalWebHost) {
       push(`${web.protocol}//localhost/backend/api.php`);
       push(`${web.protocol}//127.0.0.1/backend/api.php`);
       push(`${web.protocol}//localhost/misecreto/backend/api.php`);
@@ -64,9 +72,11 @@ const getCandidateApiBases = () => {
     }
   }
 
-  // 5) Emulador Android + último fallback.
+  // 5) Emulador Android + fallback localhost solo fuera de web remota.
   push('http://10.0.2.2/backend/api.php');
-  push('http://127.0.0.1/backend/api.php');
+  if (!web || isLocalWebHost) {
+    push('http://127.0.0.1/backend/api.php');
+  }
 
   return out;
 };
@@ -169,7 +179,9 @@ const parseJsonPayload = async (res, meta) => {
       error: error?.message || String(error),
       snippet: rawText.slice(0, 180),
     });
-    throw new Error('Respuesta inválida del servidor. Verifica que la URL del backend apunte a /backend/api.php.');
+    const parseError = new Error('Respuesta inválida del servidor. Verifica que la URL del backend apunte a /backend/api.php.');
+    parseError.code = 'API_PARSE_ERROR';
+    throw parseError;
   }
 };
 
@@ -217,6 +229,9 @@ export async function apiRequest(action, options = {}) {
         ...meta,
         error: error?.message || String(error),
       });
+      if (error?.code === 'API_PARSE_ERROR') {
+        continue;
+      }
       // Solo seguimos con otro base si fue red o timeout.
       if (!/aborted|network|failed|load/i.test(error?.message || '')) {
         throw error;
