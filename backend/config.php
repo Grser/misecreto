@@ -7,11 +7,11 @@ $env = static function (string $key, ?string $default = null): ?string {
 
 return [
     'db' => [
-        'host' => $env('DB_HOST', '127.0.0.1'),
+        'host' => $env('DB_HOST', 'db.clawn.net'),
         'port' => (int) $env('DB_PORT', '3306'),
         'name' => (string) $env('DB_NAME', 'misecreto'),
-        'user' => (string) $env('DB_USER', ''),
-        'pass' => (string) $env('DB_PASS', ''),
+        'user' => (string) $env('DB_USER', 'conexiones'),
+        'pass' => (string) $env('DB_PASS', '1234'),
         'charset' => 'utf8mb4',
     ],
     'security' => [
