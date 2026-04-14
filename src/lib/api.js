@@ -1,4 +1,5 @@
 // src/lib/api.js
+
 const normalizeApiBase = (rawBase) => {
   if (!rawBase) return null;
 
@@ -8,21 +9,74 @@ const normalizeApiBase = (rawBase) => {
   if (clean.endsWith('api.php')) return clean;
   if (clean.endsWith('/backend')) return `${clean}/api.php`;
 
-  // Si te pasan solo dominio (https://mi-api.com), agregamos la ruta esperada.
   return `${clean}/backend/api.php`;
 };
 
-const WEB_DEFAULT = typeof window !== 'undefined' && window?.location
-  ? `${window.location.origin}/backend/api.php`
-  : null;
+const getWebRuntimeContext = () => {
+  if (typeof window === 'undefined' || !window?.location) return null;
 
-export const API_BASE = normalizeApiBase(process.env.EXPO_PUBLIC_API_URL)
-  || WEB_DEFAULT
-  || 'http://127.0.0.1/backend/api.php';
+  const { protocol, hostname, origin, pathname } = window.location;
+  const firstSegment = pathname
+    .split('/')
+    .filter(Boolean)
+    .at(0);
 
-const buildUrl = (action) => {
-  const separator = API_BASE.includes('?') ? '&' : '?';
-  return `${API_BASE}${separator}action=${encodeURIComponent(action)}`;
+  return {
+    protocol,
+    hostname,
+    origin,
+    firstSegment,
+  };
+};
+
+const getCandidateApiBases = () => {
+  const seen = new Set();
+  const out = [];
+
+  const push = (value) => {
+    const normalized = normalizeApiBase(value);
+    if (!normalized || seen.has(normalized)) return;
+    seen.add(normalized);
+    out.push(normalized);
+  };
+
+  // 1) Valor explícito del entorno, siempre prioridad máxima.
+  push(process.env.EXPO_PUBLIC_API_URL);
+
+  const web = getWebRuntimeContext();
+  if (web) {
+    // 2) Mismo host desde donde corre la web.
+    push(`${web.origin}/backend/api.php`);
+
+    // 3) Si la app está bajo subruta, intentamos con ese prefijo.
+    if (web.firstSegment && web.firstSegment !== 'backend') {
+      push(`${web.origin}/${web.firstSegment}/backend/api.php`);
+    }
+
+    // 4) Desarrollo local típico (Expo web en :19006 y backend en Apache :80).
+    if (web.hostname === 'localhost' || web.hostname === '127.0.0.1') {
+      push(`${web.protocol}//localhost/backend/api.php`);
+      push(`${web.protocol}//127.0.0.1/backend/api.php`);
+      push(`${web.protocol}//localhost/misecreto/backend/api.php`);
+      push(`${web.protocol}//127.0.0.1/misecreto/backend/api.php`);
+      push(`${web.protocol}//localhost:8000/backend/api.php`);
+      push(`${web.protocol}//127.0.0.1:8000/backend/api.php`);
+    }
+  }
+
+  // 5) Emulador Android + último fallback.
+  push('http://10.0.2.2/backend/api.php');
+  push('http://127.0.0.1/backend/api.php');
+
+  return out;
+};
+
+const API_CANDIDATES = getCandidateApiBases();
+let workingApiBase = API_CANDIDATES[0] || 'http://127.0.0.1/backend/api.php';
+
+const withAction = (base, action) => {
+  const separator = base.includes('?') ? '&' : '?';
+  return `${base}${separator}action=${encodeURIComponent(action)}`;
 };
 
 const getWebOrigin = () => {
@@ -33,66 +87,147 @@ const getWebOrigin = () => {
 const debugApi = (stage, details = {}) => {
   if (typeof console === 'undefined' || typeof console.info !== 'function') return;
   console.info('[MiSecreto API DEBUG]', stage, {
-    apiBase: API_BASE,
+    workingApiBase,
+    candidates: API_CANDIDATES,
     webOrigin: getWebOrigin(),
     ...details,
   });
 };
 
-export async function apiRequest(action, { method = 'GET', token, body } = {}) {
+const fetchWithTimeout = async (url, init = {}, timeoutMs = 9000) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
+const shouldTryNextBase = (res) => {
+  // 404 en action=health suele indicar ruta incorrecta en ese host.
+  return res.status === 404;
+};
+
+async function requestAgainstBase(base, action, options = {}) {
+  const { method = 'GET', token, body } = options;
   const headers = { 'Content-Type': 'application/json' };
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const url = buildUrl(action);
-  debugApi('request:start', { action, method, url, hasToken: Boolean(token) });
-
-  let res;
-  try {
-    res = await fetch(url, {
-      method,
-      headers,
-      body: body ? JSON.stringify(body) : undefined,
-    });
-  } catch (error) {
-    debugApi('request:network_error', {
-      action,
-      method,
-      url,
-      error: error?.message || String(error),
-    });
-    throw new Error('No se pudo conectar al servidor. Revisa EXPO_PUBLIC_API_URL y que backend/api.php esté activo.');
-  }
-
-  let payload = null;
-  try {
-    const rawText = await res.text();
-    payload = rawText ? JSON.parse(rawText) : {};
-  } catch (error) {
-    debugApi('request:parse_error', {
-      action,
-      method,
-      url,
-      status: res.status,
-      error: error?.message || String(error),
-    });
-    throw new Error('Respuesta inválida del servidor. Verifica que EXPO_PUBLIC_API_URL apunte a /backend/api.php.');
-  }
-
-  debugApi('request:response', {
-    action,
+  const url = withAction(base, action);
+  const res = await fetchWithTimeout(url, {
     method,
-    url,
-    status: res.status,
-    ok: res.ok,
-    payloadOk: payload?.ok,
-    payloadError: payload?.error,
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
   });
 
-  if (!res.ok || payload?.ok === false) {
-    throw new Error(payload?.error || `Error HTTP ${res.status}`);
+  return { res, url };
+}
+
+async function resolveWorkingBase() {
+  if (!API_CANDIDATES.length) return workingApiBase;
+
+  for (const candidate of API_CANDIDATES) {
+    try {
+      const { res } = await requestAgainstBase(candidate, 'health');
+      if (res.ok) {
+        workingApiBase = candidate;
+        debugApi('base:resolved', { resolved: candidate, status: res.status });
+        return workingApiBase;
+      }
+
+      if (!shouldTryNextBase(res)) {
+        // Si responde algo distinto de 404, existe backend en ese host.
+        workingApiBase = candidate;
+        debugApi('base:resolved_non404', { resolved: candidate, status: res.status });
+        return workingApiBase;
+      }
+    } catch (error) {
+      debugApi('base:candidate_failed', {
+        candidate,
+        error: error?.message || String(error),
+      });
+    }
   }
 
-  return payload;
+  // Si nada funcionó, dejamos el primero para reportar error coherente.
+  workingApiBase = API_CANDIDATES[0];
+  return workingApiBase;
+}
+
+const parseJsonPayload = async (res, meta) => {
+  const rawText = await res.text();
+  if (!rawText) return {};
+
+  try {
+    return JSON.parse(rawText);
+  } catch (error) {
+    debugApi('request:parse_error', {
+      ...meta,
+      status: res.status,
+      error: error?.message || String(error),
+      snippet: rawText.slice(0, 180),
+    });
+    throw new Error('Respuesta inválida del servidor. Verifica que la URL del backend apunte a /backend/api.php.');
+  }
+};
+
+export async function apiRequest(action, options = {}) {
+  await resolveWorkingBase();
+
+  const method = options?.method || 'GET';
+  const tried = [];
+  const basesToTry = [workingApiBase, ...API_CANDIDATES.filter((b) => b !== workingApiBase)];
+
+  for (const base of basesToTry) {
+    const meta = { action, method, base };
+
+    try {
+      const { res, url } = await requestAgainstBase(base, action, options);
+      tried.push(url);
+
+      const payload = await parseJsonPayload(res, { ...meta, url });
+
+      debugApi('request:response', {
+        ...meta,
+        url,
+        status: res.status,
+        ok: res.ok,
+        payloadOk: payload?.ok,
+        payloadError: payload?.error,
+      });
+
+      if (res.ok && payload?.ok !== false) {
+        if (base !== workingApiBase) {
+          workingApiBase = base;
+          debugApi('base:switched_after_success', { newBase: base, action });
+        }
+        return payload;
+      }
+
+      // Si es 404, probablemente URL incorrecta, seguimos probando otros base.
+      if (shouldTryNextBase(res)) {
+        continue;
+      }
+
+      throw new Error(payload?.error || `Error HTTP ${res.status}`);
+    } catch (error) {
+      debugApi('request:attempt_failed', {
+        ...meta,
+        error: error?.message || String(error),
+      });
+      // Solo seguimos con otro base si fue red o timeout.
+      if (!/aborted|network|failed|load/i.test(error?.message || '')) {
+        throw error;
+      }
+    }
+  }
+
+  throw new Error(
+    `No se pudo conectar al servidor. URLs probadas: ${tried.join(' | ')}. `
+    + 'Configura EXPO_PUBLIC_API_URL con la URL exacta de tu backend/api.php.'
+  );
 }
 
 export const authApi = {
@@ -107,4 +242,9 @@ export const secretsApi = {
 
 export const healthApi = {
   check: () => apiRequest('health'),
+};
+
+export const __apiDebug = {
+  getCandidates: () => [...API_CANDIDATES],
+  getWorkingBase: () => workingApiBase,
 };

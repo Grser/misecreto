@@ -91,3 +91,18 @@ EXPO_PUBLIC_API_URL=https://tu-dominio.com/backend/api.php
 También acepta solo el dominio/base (`https://tu-dominio.com`) y la app agregará `/backend/api.php` automáticamente.
 
 Si no la defines en web, intenta usar automáticamente `/<host>/backend/api.php`.
+
+### Detección automática de backend (nuevo)
+
+Si no defines `EXPO_PUBLIC_API_URL`, la app ahora prueba varias rutas comunes y se queda con la que responda:
+
+- `https://<host-actual>/backend/api.php`
+- `https://<host-actual>/<primera-subruta>/backend/api.php`
+- En local web: `localhost` / `127.0.0.1` con `/backend/api.php`, `/misecreto/backend/api.php` y puerto `:8000`
+- En Android emulador: `http://10.0.2.2/backend/api.php`
+
+Aun así, **lo recomendado** para evitar ambigüedades es setear siempre:
+
+```bash
+EXPO_PUBLIC_API_URL=https://tu-dominio.com/backend/api.php
+```
