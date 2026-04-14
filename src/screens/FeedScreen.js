@@ -9,7 +9,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { T, COUNTRIES, GRADIENTS } from '../lib/theme';
-import { secretsApi, healthApi } from '../lib/api';
+import { secretsApi, healthApi, adminApi } from '../lib/api';
+import { UK, sGet, sSet } from '../lib/storage';
 import { CntBadge, Tag, ActBtn } from '../components/Atoms';
 import { SecretCard, NsfwCard } from '../components/SecretCard';
 import CommentSheet from '../components/CommentSheet';
@@ -198,6 +199,29 @@ export default function FeedScreen({ session, onLogout, onOpenAdmin }) {
     setActive({ ...sec });
   };
 
+  const quickBanFromFeed = (username) => {
+    if (!session.isAdmin || username === session.username) return;
+    Alert.alert(
+      'Suspender usuario',
+      `¿Quieres suspender a @${username} desde el feed?`,
+      [{ text: 'Cancelar' }, {
+        text: 'Suspender', style: 'destructive', onPress: async () => {
+          try {
+            await adminApi.setUserBan(session.token, username, true);
+            const users = (await sGet(UK)) || {};
+            if (users[username]) {
+              users[username] = { ...users[username], banned: true };
+              await sSet(UK, users);
+            }
+            Alert.alert('Usuario suspendido', `@${username} fue suspendido correctamente.`);
+          } catch (e) {
+            Alert.alert('No se pudo suspender', e.message || 'Error desconocido');
+          }
+        },
+      }],
+    );
+  };
+
   const list = getSorted();
 
   /* ── Write card header ── */
@@ -338,8 +362,8 @@ export default function FeedScreen({ session, onLogout, onOpenAdmin }) {
           data={list}
           keyExtractor={s => s.id}
           renderItem={({ item: s }) => isNsfw
-            ? <NsfwCard secret={s} session={session} onComment={openComment} onLike={() => toggleLike(s.id)} />
-            : <SecretCard secret={s} session={session} onComment={openComment} onLike={() => toggleLike(s.id)} onDislike={() => toggleDislike(s.id)} />
+            ? <NsfwCard secret={s} session={session} onComment={openComment} onLike={() => toggleLike(s.id)} onBanAuthor={session.isAdmin ? quickBanFromFeed : null} />
+            : <SecretCard secret={s} session={session} onComment={openComment} onLike={() => toggleLike(s.id)} onDislike={() => toggleDislike(s.id)} onBanAuthor={session.isAdmin ? quickBanFromFeed : null} />
           }
           ListHeaderComponent={renderHeader()}
           ListEmptyComponent={
@@ -387,6 +411,7 @@ export default function FeedScreen({ session, onLogout, onOpenAdmin }) {
           secrets={[...secrets, ...nsfwSec]}
           onClose={() => setProf(false)}
           onLogout={onLogout}
+          onOpenAdmin={onOpenAdmin}
         />
       )}
     </SafeAreaView>
@@ -417,7 +442,7 @@ function NsfwGate({ onEnter, onBack }) {
 }
 
 /* ─── PROFILE MODAL ─────────────────────────────────────────────────────── */
-function ProfileModal({ session, secrets, onClose, onLogout }) {
+function ProfileModal({ session, secrets, onClose, onLogout, onOpenAdmin }) {
   const mine   = secrets.filter(s => s.author === session.username);
   const tLikes = mine.reduce((a, s) => a + s.likes, 0);
   const tCms   = mine.reduce((a, s) => a + (s.comments?.length || 0), 0);
@@ -483,6 +508,12 @@ function ProfileModal({ session, secrets, onClose, onLogout }) {
             </View>
           )}
         />
+        {session.isAdmin && (
+          <TouchableOpacity onPress={() => { onClose(); onOpenAdmin?.(); }} style={profSt.adminAccessBtn}>
+            <Feather name="shield" size={14} color="#60a5fa" style={{ marginRight: 8 }} />
+            <Text style={profSt.adminAccessTxt}>Entrar al panel de admin</Text>
+          </TouchableOpacity>
+        )}
         <TouchableOpacity onPress={onLogout} style={profSt.logoutBtn}>
           <Feather name="log-out" size={14} color="#f87171" style={{ marginRight: 8 }} />
           <Text style={profSt.logoutTxt}>Cerrar sesión</Text>
@@ -577,6 +608,8 @@ const profSt = StyleSheet.create({
   myStats:   { flexDirection: 'row', gap: 12, marginTop: 4 },
   myStatItem:{ flexDirection: 'row', alignItems: 'center', gap: 4 },
   myStatTxt: { fontSize: 11, color: T.text3 },
+  adminAccessBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#0b162b', borderTopWidth: 1, borderTopColor: '#1d4ed8', paddingVertical: 14 },
+  adminAccessTxt: { color: '#60a5fa', fontSize: 13, fontWeight: '700' },
   logoutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#1a0a10', borderTopWidth: 1, borderTopColor: '#451a1a', padding: 16 },
   logoutTxt: { color: '#f87171', fontSize: 14, fontWeight: '600' },
 });

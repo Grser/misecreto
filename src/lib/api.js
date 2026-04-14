@@ -43,6 +43,9 @@ export const authApi = {
     if (!user || user.passwordHash !== hashStr(String(password || ''))) {
       throw new Error('Credenciales inválidas');
     }
+    if (user.banned) {
+      throw new Error('Tu cuenta está suspendida');
+    }
 
     return {
       ok: true,
@@ -120,6 +123,40 @@ export const authApi = {
     delete users[clean];
     await sSet(UK, users);
 
+    return { ok: true };
+  },
+};
+
+export const adminApi = {
+  setUserBan: async (token, username, banned) => {
+    const actor = await getCurrentUserFromToken(token);
+    if (!actor.isAdmin) throw new Error('No autorizado');
+
+    const clean = String(username || '').trim().toLowerCase();
+    if (!clean) throw new Error('Usuario inválido');
+
+    const users = normalizeUsers(await sGet(UK));
+    const target = users[clean];
+    if (!target) throw new Error('Usuario no encontrado');
+
+    users[clean] = { ...target, banned: !!banned };
+    await sSet(UK, users);
+    return { ok: true };
+  },
+
+  setUserAdmin: async (token, username, isAdmin) => {
+    const actor = await getCurrentUserFromToken(token);
+    if (!actor.isAdmin) throw new Error('No autorizado');
+
+    const clean = String(username || '').trim().toLowerCase();
+    if (!clean) throw new Error('Usuario inválido');
+
+    const users = normalizeUsers(await sGet(UK));
+    const target = users[clean];
+    if (!target) throw new Error('Usuario no encontrado');
+
+    users[clean] = { ...target, isAdmin: !!isAdmin };
+    await sSet(UK, users);
     return { ok: true };
   },
 };

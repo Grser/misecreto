@@ -9,6 +9,7 @@ import { Feather } from '@expo/vector-icons';
 import { T, COUNTRIES, cOf, COUNTRY_CLR } from '../lib/theme';
 import { sGet, sSet, SK, NK, UK, fullDate, timeAgo, cleanSecrets } from '../lib/storage';
 import { Avatar, CntBadge, Tag, Card, Spinner, BtnDanger } from '../components/Atoms';
+import { adminApi } from '../lib/api';
 
 const NAV = [
   { id: 'dash',     icon: 'bar-chart-2', label: 'Dashboard' },
@@ -18,7 +19,7 @@ const NAV = [
   { id: 'comments', icon: 'message-square', label: 'Comentarios' },
 ];
 
-export default function AdminScreen({ onBack }) {
+export default function AdminScreen({ onBack, session }) {
   const [view,    setView]    = useState('dash');
   const [users,   setUsers]   = useState({});
   const [secrets, setSecrets] = useState([]);
@@ -41,9 +42,25 @@ export default function AdminScreen({ onBack }) {
       `¿${users[username].banned ? 'Reactivar' : 'Suspender'} a @${username}?`,
       [{ text: 'Cancelar' }, {
         text: 'Confirmar', style: 'destructive', onPress: async () => {
+          await adminApi.setUserBan(session.token, username, !users[username].banned);
           const u = { ...users, [username]: { ...users[username], banned: !users[username].banned } };
           await sSet(UK, u); setUsers(u);
         }
+      }]
+    );
+  };
+
+  const setAdminRole = async (username) => {
+    const willBeAdmin = !users[username].isAdmin;
+    Alert.alert(
+      willBeAdmin ? 'Dar rol administrador' : 'Quitar rol administrador',
+      `¿${willBeAdmin ? 'Dar' : 'Quitar'} permisos de admin a @${username}?`,
+      [{ text: 'Cancelar' }, {
+        text: 'Confirmar', style: 'destructive', onPress: async () => {
+          await adminApi.setUserAdmin(session.token, username, willBeAdmin);
+          const u = { ...users, [username]: { ...users[username], isAdmin: willBeAdmin } };
+          await sSet(UK, u); setUsers(u);
+        },
       }]
     );
   };
@@ -101,6 +118,17 @@ export default function AdminScreen({ onBack }) {
     { label: 'Likes',       val: stats.likes,    icon: 'heart',         color: T.rose },
     { label: 'Suspendidos', val: stats.banned,   icon: 'slash',         color: '#ef4444' },
   ];
+
+  if (!session?.isAdmin) {
+    return (
+      <SafeAreaView style={styles.root} edges={['top']}>
+        <View style={styles.center}>
+          <Feather name="shield-off" size={28} color="#f87171" />
+          <Text style={{ color: T.text2, marginTop: 10 }}>Acceso solo para administradores.</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.root} edges={['top']}>
@@ -174,11 +202,16 @@ export default function AdminScreen({ onBack }) {
                   <View style={styles.userNameRow}>
                     <Text style={styles.userNameTxt}>@{uname}</Text>
                     {u.banned && <Tag label="SUSPENDIDO" color="#ef4444" />}
+                    {u.isAdmin && <Tag label="ADMIN" color={T.blue} />}
                     {u.nsfwVerified && <Tag label="NSFW ✓" color="#c026d3" />}
                   </View>
                   <Text style={styles.userMeta}>{cOf(u.country).flag} {cOf(u.country).name} · {up} posts · ❤️{ul} · {fullDate(u.createdAt)}</Text>
                 </View>
                 <View style={styles.userActions}>
+                  <TouchableOpacity onPress={() => setAdminRole(uname)}
+                    style={[styles.smallBtn, { backgroundColor: u.isAdmin ? '#0b162b' : T.bg3, borderColor: u.isAdmin ? '#1d4ed8' : T.border }]}>
+                    <Feather name="shield" size={11} color={u.isAdmin ? '#60a5fa' : T.text3} />
+                  </TouchableOpacity>
                   <TouchableOpacity onPress={() => verifyNsfw(uname)}
                     style={[styles.smallBtn, { backgroundColor: u.nsfwVerified ? '#1a0a24' : T.bg3, borderColor: u.nsfwVerified ? '#7c3aed' : T.border }]}>
                     <Feather name="alert-octagon" size={11} color={u.nsfwVerified ? '#c026d3' : T.text3} />

@@ -22,7 +22,7 @@ const EmojiAv = ({ colorIdx = 0, size = 36, nsfw = false }) => {
 const totCm = (s) => (s.comments || []).reduce((a, c) => a + 1 + (c.replies?.length || 0), 0);
 
 /* ─── SFW CARD ───────────────────────────────────────────────────────────── */
-export const SecretCard = ({ secret, session, onComment, onLike, onDislike }) => {
+export const SecretCard = ({ secret, session, onComment, onLike, onDislike, onBanAuthor }) => {
   const liked    = secret.likedBy?.includes(session.username);
   const disliked = secret.dislikedBy?.includes(session.username);
   const isMine   = secret.author === session.username;
@@ -36,6 +36,11 @@ export const SecretCard = ({ secret, session, onComment, onLike, onDislike }) =>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Text style={styles.uid}>@{secret.author}</Text>
             {isMine && <Tag label="yo" color={T.blue} />}
+            {!!onBanAuthor && !isMine && (
+              <TouchableOpacity onPress={() => onBanAuthor(secret.author)} style={styles.banBtn}>
+                <Feather name="user-x" size={11} color="#f87171" />
+              </TouchableOpacity>
+            )}
           </View>
           <Text style={styles.timeText}>{timeAgo(secret.time)}</Text>
         </View>
@@ -80,7 +85,7 @@ export const SecretCard = ({ secret, session, onComment, onLike, onDislike }) =>
 };
 
 /* ─── NSFW CARD ──────────────────────────────────────────────────────────── */
-export const NsfwCard = ({ secret, session, onComment, onLike }) => {
+export const NsfwCard = ({ secret, session, onComment, onLike, onBanAuthor }) => {
   const [revealed, setRev] = useState(false);
   const liked  = secret.likedBy?.includes(session.username);
   const isMine = secret.author === session.username;
@@ -94,6 +99,11 @@ export const NsfwCard = ({ secret, session, onComment, onLike }) => {
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Text style={[styles.uid, { color: '#d8b4fe' }]}>@{secret.author}</Text>
             {isMine && <Tag label="yo" color="#c026d3" />}
+            {!!onBanAuthor && !isMine && (
+              <TouchableOpacity onPress={() => onBanAuthor(secret.author)} style={styles.banBtn}>
+                <Feather name="user-x" size={11} color="#f87171" />
+              </TouchableOpacity>
+            )}
           </View>
           <Text style={[styles.timeText, { color: '#7c3aed' }]}>{timeAgo(secret.time)}</Text>
         </View>
@@ -172,4 +182,5 @@ const styles = StyleSheet.create({
   actions:     { flexDirection: 'row', gap: 2, borderTopWidth: 1, borderTopColor: T.border, paddingTop: 8, marginTop: 2 },
   blurOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(20,5,35,0.88)', borderRadius: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14 },
   revealTxt:   { color: '#fff', fontSize: 13, fontWeight: '700' },
+  banBtn:      { width: 20, height: 20, borderRadius: 10, borderWidth: 1, borderColor: '#451a1a', backgroundColor: '#1a0a10', alignItems: 'center', justifyContent: 'center' },
 });
