@@ -9,7 +9,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { T, COUNTRIES, GRADIENTS } from '../lib/theme';
-import { sGet, sSet, SK, NK, uid, cleanSecrets, timeAgo } from '../lib/storage';
+import { sGet, sSet, SK, NK, uid, cleanSecrets, checkStorageConnection } from '../lib/storage';
 import { CntBadge, Tag, ActBtn } from '../components/Atoms';
 import { SecretCard, NsfwCard } from '../components/SecretCard';
 import CommentSheet from '../components/CommentSheet';
@@ -65,6 +65,7 @@ export default function FeedScreen({ session, onLogout, onOpenAdmin }) {
   const [photo,    setPhoto]   = useState(null);
   const [duration, setDur]     = useState(0);
   const [showDur,  setShowDur] = useState(false);
+  const [dbStatus, setDbStatus] = useState('checking');
 
   const isNsfw = tab === 'nsfw';
   const sk     = isNsfw ? NK : SK;
@@ -80,7 +81,13 @@ export default function FeedScreen({ session, onLogout, onOpenAdmin }) {
     setRefresh(false);
   }, []);
 
-  React.useEffect(() => { load(); }, [load]);
+  React.useEffect(() => {
+    load();
+    (async () => {
+      const ok = await checkStorageConnection();
+      setDbStatus(ok ? 'connected' : 'error');
+    })();
+  }, [load]);
 
   const update = (all, forNsfw) => {
     const c = cleanSecrets(all.filter(s => !isExpired(s)));
@@ -280,6 +287,10 @@ export default function FeedScreen({ session, onLogout, onOpenAdmin }) {
       <View style={[styles.topnav, isNsfw && styles.topnavNsfw]}>
         <Text style={styles.logo}>Mi<Text style={{ color: isNsfw ? '#c026d3' : T.blue }}>Secreto</Text></Text>
         <View style={{ flex: 1 }} />
+        <View style={[styles.dbPill, dbStatus === 'connected' ? styles.dbPillOk : styles.dbPillErr]}>
+          <View style={[styles.dbDot, dbStatus === 'connected' ? styles.dbDotOk : styles.dbDotErr]} />
+          <Text style={styles.dbTxt}>DB {dbStatus === 'checking' ? 'verificando...' : dbStatus === 'connected' ? 'conectada' : 'sin conexión'}</Text>
+        </View>
         {session.isAdmin && (
           <TouchableOpacity onPress={onOpenAdmin} style={styles.adminBtn}>
             <Feather name="shield" size={14} color="#f87171" />
@@ -301,7 +312,7 @@ export default function FeedScreen({ session, onLogout, onOpenAdmin }) {
             ? <NsfwCard secret={s} session={session} onComment={openComment} onLike={() => toggleLike(s.id)} />
             : <SecretCard secret={s} session={session} onComment={openComment} onLike={() => toggleLike(s.id)} onDislike={() => toggleDislike(s.id)} />
           }
-          ListHeaderComponent={renderHeader}
+          ListHeaderComponent={renderHeader()}
           ListEmptyComponent={
             <View style={styles.empty}>
               <Feather name={tab === 'mios' ? 'lock' : isNsfw ? 'alert-octagon' : 'message-circle'} size={34} color={T.text3} />
@@ -459,6 +470,13 @@ const styles = StyleSheet.create({
   topnavNsfw:    { backgroundColor: '#0d0614', borderBottomColor: '#3d1a5a' },
   logo:          { fontSize: 20, fontWeight: '800', color: '#f8fafc', letterSpacing: -0.5 },
   adminBtn:      { backgroundColor: 'rgba(239,68,68,0.12)', borderWidth: 1, borderColor: 'rgba(239,68,68,0.3)', borderRadius: 8, padding: 7 },
+  dbPill:        { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 999, paddingVertical: 4, paddingHorizontal: 8 },
+  dbPillOk:      { borderColor: 'rgba(16,185,129,0.45)', backgroundColor: 'rgba(16,185,129,0.12)' },
+  dbPillErr:     { borderColor: 'rgba(239,68,68,0.45)', backgroundColor: 'rgba(239,68,68,0.12)' },
+  dbDot:         { width: 7, height: 7, borderRadius: 4, marginRight: 6 },
+  dbDotOk:       { backgroundColor: '#34d399' },
+  dbDotErr:      { backgroundColor: '#f87171' },
+  dbTxt:         { fontSize: 10, fontWeight: '700', color: T.text2 },
   nsfwBanner:    { flexDirection: 'row', gap: 10, backgroundColor: '#1a0e24', borderWidth: 1, borderColor: '#3d1a5a', borderRadius: 12, padding: 12, marginBottom: 10, alignItems: 'center' },
   nsfwBannerTitle:{ fontSize: 13, fontWeight: '700', color: '#f0abfc' },
   nsfwBannerSub: { fontSize: 11, color: '#a78bfa', marginTop: 1 },
