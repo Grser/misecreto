@@ -51,5 +51,3 @@ export const COUNTRIES = [
 ];
 
 export const cOf = (code) => COUNTRIES.find(c => c.code === code) || COUNTRIES[0];
-
-export const ADMIN = { user: 'admin', pass: 'admin123' };

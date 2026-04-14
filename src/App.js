@@ -64,7 +64,7 @@ export default function App() {
     <SafeAreaProvider>
       <StatusBar style="light" backgroundColor="#060910" translucent={false} />
       {!session && <AuthScreen onLogin={onLogin} />}
-      {session && showAdmin && session.isAdmin && <AdminScreen onBack={() => setAdmin(false)} />}
+      {session && showAdmin && session.isAdmin && <AdminScreen session={session} onBack={() => setAdmin(false)} />}
       {session && !showAdmin && <FeedScreen session={session} onLogout={onLogout} onOpenAdmin={() => setAdmin(true)} />}
     </SafeAreaProvider>
   );
