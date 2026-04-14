@@ -4,10 +4,12 @@ import {
   View, Text, TouchableOpacity, ScrollView,
   KeyboardAvoidingView, Platform, StyleSheet, Alert,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Feather } from '@expo/vector-icons';
 import { T, COUNTRIES } from '../lib/theme';
 import { authApi } from '../lib/api';
 import { Input, BtnPrimary, Card } from '../components/Atoms';
+import { SSK, UK, SK, NK } from '../lib/storage';
 
 const AVATAR_COUNT = 8;
 
@@ -70,6 +72,34 @@ export default function AuthScreen({ onLogin }) {
     setBusy(false);
   };
 
+  const clearLocalData = () => {
+    Alert.alert(
+      'Limpiar datos locales',
+      'Esto borrará cuentas, sesión y secretos guardados en este dispositivo.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Limpiar',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await Promise.all([
+                AsyncStorage.removeItem(SSK),
+                AsyncStorage.removeItem(UK),
+                AsyncStorage.removeItem(SK),
+                AsyncStorage.removeItem(NK),
+              ]);
+              setErr('');
+              Alert.alert('Datos locales limpiados', 'Ya podés volver a iniciar sesión o crear una cuenta.');
+            } catch {
+              Alert.alert('No se pudo limpiar', 'Intentá cerrar y abrir la app nuevamente.');
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const selCountry = cOf => COUNTRIES.find(c => c.code === cOf) || COUNTRIES[0];
 
   return (
@@ -84,6 +114,15 @@ export default function AuthScreen({ onLogin }) {
 
         {/* Card */}
         <Card style={styles.card}>
+          <View style={styles.localModeBox}>
+            <Text style={styles.localModeTxt}>
+              Modo local: cuentas y secretos se guardan solo en este navegador/dispositivo.
+            </Text>
+            <TouchableOpacity onPress={clearLocalData}>
+              <Text style={styles.localModeAction}>Limpiar datos locales</Text>
+            </TouchableOpacity>
+          </View>
+
           {/* Tabs */}
           <View style={styles.tabRow}>
             {[['login','Iniciar sesión'],['reg','Registrarse']].map(([m, l]) => (
@@ -182,6 +221,9 @@ const styles = StyleSheet.create({
   logoText:  { fontSize: 38, fontWeight: '800', color: '#f8fafc', letterSpacing: -1 },
   logoSub:   { fontSize: 13, color: T.text3, marginTop: 4 },
   card:      { width: '100%', maxWidth: 400, padding: 22, borderRadius: 20 },
+  localModeBox: { backgroundColor: T.bg2, borderWidth: 1, borderColor: T.border, borderRadius: 10, padding: 10, marginBottom: 14, gap: 6 },
+  localModeTxt: { color: T.text2, fontSize: 12, lineHeight: 17 },
+  localModeAction: { color: T.blue, fontSize: 12, fontWeight: '700' },
   tabRow:    { flexDirection: 'row', backgroundColor: T.bg2, borderRadius: 10, padding: 3, marginBottom: 20 },
   tabBtn:    { flex: 1, paddingVertical: 9, borderRadius: 8, alignItems: 'center' },
   tabBtnActive: { backgroundColor: T.blue },
