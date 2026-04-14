@@ -38,10 +38,10 @@ export default function AuthScreen({ onLogin }) {
         username: res.user.username,
         userId: res.user.id,
         token: res.token,
-        color: selColor,
-        country: form.country,
+        color: Number.isFinite(res.user.color) ? res.user.color : selColor,
+        country: res.user.country || form.country || 'us',
         isAdmin: !!res.user.is_admin,
-        nsfwVerified: false,
+        nsfwVerified: !!res.user.nsfwVerified,
       };
       onLogin(s);
     } catch (e) {
@@ -56,15 +56,15 @@ export default function AuthScreen({ onLogin }) {
     const validationError = validateRegisterInput(u, form.password);
     if (validationError) { setErr(validationError); setBusy(false); return; }
     try {
-      const res = await authApi.register(u, form.password);
+      const res = await authApi.register(u, form.password, { color: selColor, country: form.country });
       const s = {
         username: res.user.username,
         userId: res.user.id,
         token: res.token,
-        color: selColor,
-        country: form.country,
+        color: Number.isFinite(res.user.color) ? res.user.color : selColor,
+        country: res.user.country || form.country || 'us',
         isAdmin: !!res.user.is_admin,
-        nsfwVerified: false,
+        nsfwVerified: !!res.user.nsfwVerified,
       };
       onLogin(s);
     } catch (e) {
