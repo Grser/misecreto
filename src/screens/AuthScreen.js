@@ -2,22 +2,19 @@
 import React, { useState } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView,
-  KeyboardAvoidingView, Platform, StyleSheet, Alert,
+  KeyboardAvoidingView, Platform, StyleSheet,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Feather } from '@expo/vector-icons';
 import { T, COUNTRIES } from '../lib/theme';
 import { authApi } from '../lib/api';
 import { normalizeUsername, validateRegisterInput } from '../lib/validation';
 import { Input, BtnPrimary, Card } from '../components/Atoms';
-import { SSK, UK, SK, NK } from '../lib/storage';
 
 const AVATAR_COUNT = 8;
 
 export default function AuthScreen({ onLogin }) {
   const [mode, setMode]     = useState('login');
   const [err, setErr]       = useState('');
-  const [note, setNote]     = useState('');
   const [busy, setBusy]     = useState(false);
   const [selColor, setSel]  = useState(0);
   const [form, setForm]     = useState({ username: '', password: '', country: 'ar' });
@@ -73,102 +70,7 @@ export default function AuthScreen({ onLogin }) {
     setBusy(false);
   };
 
-  const clearLocalData = () => {
-    Alert.alert(
-      'Limpiar datos locales',
-      'Esto borrará cuentas, sesión y secretos guardados en este dispositivo.',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Limpiar',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await Promise.all([
-                AsyncStorage.removeItem(SSK),
-                AsyncStorage.removeItem(UK),
-                AsyncStorage.removeItem(SK),
-                AsyncStorage.removeItem(NK),
-              ]);
-              setErr('');
-              Alert.alert('Datos locales limpiados', 'Ya podés volver a iniciar sesión o crear una cuenta.');
-            } catch {
-              Alert.alert('No se pudo limpiar', 'Intentá cerrar y abrir la app nuevamente.');
-            }
-          },
-        },
-      ],
-    );
-  };
-
   const selCountry = cOf => COUNTRIES.find(c => c.code === cOf) || COUNTRIES[0];
-  const cleanUsername = String(form.username || '').trim().toLowerCase();
-
-  const resetPasswordLocal = () => {
-    if (!cleanUsername) {
-      setErr('Escribe tu usuario primero');
-      return;
-    }
-    if (!form.password) {
-      setErr('Escribe una nueva contraseña para restablecer');
-      return;
-    }
-
-    Alert.alert(
-      'Restablecer contraseña local',
-      `Se reemplazará la contraseña local de @${cleanUsername} con la que escribiste en el campo de contraseña.`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Restablecer',
-          style: 'destructive',
-          onPress: async () => {
-            setBusy(true);
-            try {
-              await authApi.resetLocalUser(cleanUsername, form.password);
-              setErr('');
-              setNote('Contraseña local restablecida. Intenta iniciar sesión nuevamente.');
-            } catch (e) {
-              setErr(e.message || 'No se pudo restablecer la contraseña local');
-              setNote('');
-            }
-            setBusy(false);
-          },
-        },
-      ],
-    );
-  };
-
-  const clearLocalAccount = () => {
-    if (!cleanUsername) {
-      setErr('Escribe tu usuario primero');
-      return;
-    }
-
-    Alert.alert(
-      'Borrar datos locales',
-      `Esto eliminará la cuenta local @${cleanUsername} en este dispositivo.`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Borrar',
-          style: 'destructive',
-          onPress: async () => {
-            setBusy(true);
-            try {
-              await authApi.deleteLocalUser(cleanUsername);
-              setErr('');
-              setNote('Cuenta local borrada. Ahora puedes registrarte otra vez con ese usuario.');
-            } catch (e) {
-              setErr(e.message || 'No se pudo borrar la cuenta local');
-              setNote('');
-            }
-            setBusy(false);
-          },
-        },
-      ],
-    );
-  };
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.root}>
@@ -182,19 +84,10 @@ export default function AuthScreen({ onLogin }) {
 
         {/* Card */}
         <Card style={styles.card}>
-          <View style={styles.localModeBox}>
-            <Text style={styles.localModeTxt}>
-              Modo local: cuentas y secretos se guardan solo en este navegador/dispositivo.
-            </Text>
-            <TouchableOpacity onPress={clearLocalData}>
-              <Text style={styles.localModeAction}>Limpiar datos locales</Text>
-            </TouchableOpacity>
-          </View>
-
           {/* Tabs */}
           <View style={styles.tabRow}>
             {[['login','Iniciar sesión'],['reg','Registrarse']].map(([m, l]) => (
-              <TouchableOpacity key={m} onPress={() => { setMode(m); setErr(''); setNote(''); }}
+              <TouchableOpacity key={m} onPress={() => { setMode(m); setErr(''); }}
                 style={[styles.tabBtn, mode === m && styles.tabBtnActive]}>
                 <Text style={[styles.tabTxt, mode === m && styles.tabTxtActive]}>{l}</Text>
               </TouchableOpacity>
@@ -206,31 +99,6 @@ export default function AuthScreen({ onLogin }) {
             <View style={styles.errBox}>
               <Feather name="alert-circle" size={13} color="#f87171" />
               <Text style={styles.errTxt}>{err}</Text>
-            </View>
-          )}
-          {err === 'Usuario ya existe' && (
-            <TouchableOpacity
-              onPress={() => { setMode('login'); setErr(''); setNote('Modo inicio de sesión activado para ese usuario.'); }}
-              style={styles.ctxCta}
-              disabled={busy}
-            >
-              <Text style={styles.ctxCtaTxt}>Iniciar sesión con ese usuario</Text>
-            </TouchableOpacity>
-          )}
-          {err === 'Credenciales inválidas' && (
-            <View style={styles.ctxWrap}>
-              <TouchableOpacity onPress={resetPasswordLocal} style={styles.ctxCta} disabled={busy}>
-                <Text style={styles.ctxCtaTxt}>Restablecer contraseña local</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={clearLocalAccount} style={styles.ctxCta} disabled={busy}>
-                <Text style={styles.ctxCtaTxt}>Borrar datos locales de esta cuenta</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-          {!!note && (
-            <View style={styles.noteBox}>
-              <Feather name="info" size={13} color="#60a5fa" />
-              <Text style={styles.noteTxt}>{note}</Text>
             </View>
           )}
 
@@ -314,9 +182,6 @@ const styles = StyleSheet.create({
   logoText:  { fontSize: 38, fontWeight: '800', color: '#f8fafc', letterSpacing: -1 },
   logoSub:   { fontSize: 13, color: T.text3, marginTop: 4 },
   card:      { width: '100%', maxWidth: 400, padding: 22, borderRadius: 20 },
-  localModeBox: { backgroundColor: T.bg2, borderWidth: 1, borderColor: T.border, borderRadius: 10, padding: 10, marginBottom: 14, gap: 6 },
-  localModeTxt: { color: T.text2, fontSize: 12, lineHeight: 17 },
-  localModeAction: { color: T.blue, fontSize: 12, fontWeight: '700' },
   tabRow:    { flexDirection: 'row', backgroundColor: T.bg2, borderRadius: 10, padding: 3, marginBottom: 20 },
   tabBtn:    { flex: 1, paddingVertical: 9, borderRadius: 8, alignItems: 'center' },
   tabBtnActive: { backgroundColor: T.blue },
@@ -324,11 +189,6 @@ const styles = StyleSheet.create({
   tabTxtActive: { color: '#fff' },
   errBox:    { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#1a0a10', borderWidth: 1, borderColor: '#451a1a', borderRadius: 8, padding: 10, marginBottom: 14 },
   errTxt:    { color: '#f87171', fontSize: 12, fontWeight: '600', flex: 1 },
-  ctxWrap:   { gap: 8, marginBottom: 14 },
-  ctxCta:    { paddingVertical: 8, paddingHorizontal: 10, borderRadius: 8, borderWidth: 1, borderColor: T.blue + '88', backgroundColor: T.blue + '14', marginBottom: 8 },
-  ctxCtaTxt: { color: '#93c5fd', fontSize: 12, fontWeight: '700' },
-  noteBox:   { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#081528', borderWidth: 1, borderColor: '#1e3a8a', borderRadius: 8, padding: 10, marginBottom: 14 },
-  noteTxt:   { color: '#93c5fd', fontSize: 12, fontWeight: '600', flex: 1 },
   fieldLabel:{ fontSize: 11, fontWeight: '600', color: T.text3, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 },
   passRow:   { flexDirection: 'row', alignItems: 'center', gap: 8 },
   eyeBtn:    { padding: 12 },
