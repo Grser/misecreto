@@ -88,4 +88,6 @@ Define en Expo:
 EXPO_PUBLIC_API_URL=https://tu-dominio.com/backend/api.php
 ```
 
+También acepta solo el dominio/base (`https://tu-dominio.com`) y la app agregará `/backend/api.php` automáticamente.
+
 Si no la defines en web, intenta usar automáticamente `/<host>/backend/api.php`.
