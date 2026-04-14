@@ -26,6 +26,12 @@ echo       OK
 
 echo [5/5] Iniciando app...
 echo.
+echo [DEBUG] EXPO_PUBLIC_API_URL=%EXPO_PUBLIC_API_URL%
+if "%EXPO_PUBLIC_API_URL%"=="" (
+  echo [DEBUG] EXPO_PUBLIC_API_URL esta vacia. En web se usara http://localhost:PUERTO/backend/api.php
+)
+echo [DEBUG] Si ves CORS en navegador, agrega http://localhost:8081 y http://127.0.0.1:8081 a ALLOWED_ORIGINS del backend
+echo.
 echo  ================================================
 echo   Escaneá el QR con Expo Go en tu telefono
 echo  ================================================
