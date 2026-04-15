@@ -20,7 +20,7 @@ export default function AuthScreen({ onLogin }) {
   const [form, setForm]     = useState({ username: '', password: '', country: 'ar' });
   const [showPass, setShow] = useState(false);
   const [ctryOpen, setCtry] = useState(false);
-  const [claimCode, setClaimCode] = useState('');
+  const [adminCode, setAdminCode] = useState('');
   const [appealOpen, setAppealOpen] = useState(false);
   const [appealReason, setAppealReason] = useState('');
   const [appealBusy, setAppealBusy] = useState(false);
@@ -39,10 +39,10 @@ export default function AuthScreen({ onLogin }) {
         username: res.user.username,
         userId: res.user.id,
         token: res.token,
-        color: Number.isFinite(res.user.color) ? res.user.color : selColor,
-        country: res.user.country || form.country || 'us',
-        isAdmin: !!res.user.is_admin,
-        nsfwVerified: !!res.user.nsfwVerified,
+        color: selColor,
+        country: form.country || 'us',
+        isAdmin: Number(res.user.is_admin) === 1,
+        createdAt: res.user.created_at,
       };
       onLogin(s);
     } catch (e) {
@@ -57,43 +57,19 @@ export default function AuthScreen({ onLogin }) {
     const validationError = validateRegisterInput(u, form.password);
     if (validationError) { setErr(validationError); setBusy(false); return; }
     try {
-      const res = await authApi.register(u, form.password, { color: selColor, country: form.country });
+      const res = await authApi.register(u, form.password, { admin_code: adminCode.trim() });
       const s = {
         username: res.user.username,
         userId: res.user.id,
         token: res.token,
-        color: Number.isFinite(res.user.color) ? res.user.color : selColor,
-        country: res.user.country || form.country || 'us',
-        isAdmin: !!res.user.is_admin,
-        nsfwVerified: !!res.user.nsfwVerified,
+        color: selColor,
+        country: form.country || 'us',
+        isAdmin: Number(res.user.is_admin) === 1,
+        createdAt: res.user.created_at,
       };
       onLogin(s);
     } catch (e) {
       setErr(e.message || 'No se pudo registrar');
-    }
-    setBusy(false);
-  };
-
-
-  const doClaimAdmin = async () => {
-    setErr(''); setBusy(true);
-    const u = normalizeUsername(form.username);
-    if (!claimCode.trim()) { setErr('Ingresa el código de administrador'); setBusy(false); return; }
-    try {
-      const res = await authApi.login(u, form.password);
-      await authApi.claimAdmin(res.token, claimCode.trim());
-      const s = {
-        username: res.user.username,
-        userId: res.user.id,
-        token: res.token,
-        color: Number.isFinite(res.user.color) ? res.user.color : selColor,
-        country: res.user.country || form.country || 'us',
-        isAdmin: true,
-        nsfwVerified: !!res.user.nsfwVerified,
-      };
-      onLogin(s);
-    } catch (e) {
-      setErr(e.message || 'No se pudo reclamar administrador');
     }
     setBusy(false);
   };
@@ -214,24 +190,15 @@ export default function AuthScreen({ onLogin }) {
             </View>
           </>)}
 
-
-          {mode === 'login' && (
-            <>
-              <Input
-                label="Código admin (opcional)"
-                value={claimCode}
-                onChangeText={setClaimCode}
-                autoCapitalize="none"
-                autoCorrect={false}
-                placeholder="Código secreto"
-              />
-              <BtnPrimary
-                label="Reclamar admin"
-                onPress={doClaimAdmin}
-                loading={busy}
-                style={{ marginTop: 6, backgroundColor: '#7c3aed' }}
-              />
-            </>
+          {mode === 'reg' && (
+            <Input
+              label="Código admin (opcional)"
+              value={adminCode}
+              onChangeText={setAdminCode}
+              autoCapitalize="none"
+              autoCorrect={false}
+              placeholder="KGjmwQh2R9"
+            />
           )}
 
           <BtnPrimary

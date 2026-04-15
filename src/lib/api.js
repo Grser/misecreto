@@ -1,5 +1,4 @@
 const API_BASE_URL = (process.env.EXPO_PUBLIC_API_BASE_URL || '').replace(/\/$/, '');
-const DEV_USER_ID = Number(process.env.EXPO_PUBLIC_DEV_USER_ID || 1);
 
 const ensureBaseUrl = () => {
   if (!API_BASE_URL) {
@@ -23,6 +22,22 @@ const request = async (path, options = {}) => {
     ...options,
   });
   return parseJson(res);
+};
+
+export const registerUser = async (payload) => {
+  const data = await request('/register.php', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  return data.user;
+};
+
+export const loginUser = async (payload) => {
+  const data = await request('/login.php', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  return data.user;
 };
 
 export const fetchSecrets = async () => {
@@ -51,24 +66,30 @@ export const createComment = async (payload) => {
   return data.comment;
 };
 
-const mockAuthResult = (username) => ({
-  ok: true,
-  token: `dev-user:${DEV_USER_ID}`,
-  user: {
-    id: DEV_USER_ID,
-    username: String(username || 'anon').trim().toLowerCase() || 'anon',
-    is_admin: 0,
-    color: 0,
-    country: 'us',
-    nsfwVerified: false,
-  },
-});
+export const fetchAdminStatus = async (userId) => {
+  const data = await request(`/admin-status.php?user_id=${encodeURIComponent(userId)}`);
+  return data;
+};
 
 export const authApi = {
-  login: async (username) => mockAuthResult(username),
-  register: async (username) => mockAuthResult(username),
-  claimAdmin: async () => { throw new Error('No implementado en API REST actual'); },
-  requestAppeal: async () => { throw new Error('No implementado en API REST actual'); },
+  login: async (username, password) => {
+    const user = await loginUser({ username, password });
+    return { ok: true, user, token: `session:${user.id}` };
+  },
+  register: async (username, password, options = {}) => {
+    const user = await registerUser({
+      username,
+      password,
+      admin_code: options.admin_code || '',
+    });
+    return { ok: true, user, token: `session:${user.id}` };
+  },
+  claimAdmin: async () => {
+    throw new Error('Usa el código admin al registrarte para obtener rol admin.');
+  },
+  requestAppeal: async () => {
+    throw new Error('No implementado en API REST actual');
+  },
 };
 
 export const secretsApi = {
@@ -85,5 +106,10 @@ export const adminApi = {
 };
 
 export const healthApi = {
-  check: async () => request('/secrets.php'),
+  check: async (userId) => {
+    if (userId) {
+      return fetchAdminStatus(userId);
+    }
+    return request('/secrets.php');
+  },
 };

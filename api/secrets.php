@@ -9,7 +9,8 @@ $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
 if ($method === 'GET') {
     $sql = 'SELECT s.id, s.user_id, s.title, s.content, s.nsfw, s.color_idx, s.created_at, u.username,
-              (SELECT COUNT(*) FROM secret_likes sl WHERE sl.secret_id = s.id) AS likes
+              (SELECT COUNT(*) FROM secret_likes sl WHERE sl.secret_id = s.id) AS likes,
+              (SELECT COUNT(*) FROM comments c WHERE c.secret_id = s.id) AS comments_count
             FROM secrets s
             INNER JOIN users u ON u.id = s.user_id
             ORDER BY s.created_at DESC';

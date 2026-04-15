@@ -19,7 +19,12 @@ const EmojiAv = ({ colorIdx = 0, size = 36, nsfw = false }) => {
   );
 };
 
-const totCm = (s) => (s.comments || []).reduce((a, c) => a + 1 + (c.replies?.length || 0), 0);
+const totCm = (s) => {
+  if (Array.isArray(s.comments) && s.comments.length > 0) {
+    return s.comments.reduce((a, c) => a + 1 + (c.replies?.length || 0), 0);
+  }
+  return Number(s.commentsCount || 0);
+};
 
 /* ─── SFW CARD ───────────────────────────────────────────────────────────── */
 export const SecretCard = ({ secret, session, onComment, onLike, onDislike, onBanAuthor }) => {
