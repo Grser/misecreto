@@ -14,6 +14,7 @@ import { adminApi } from '../lib/api';
 const NAV = [
   { id: 'dash',     icon: 'bar-chart-2', label: 'Dashboard' },
   { id: 'users',    icon: 'users',       label: 'Usuarios' },
+  { id: 'appeals',  icon: 'mail',        label: 'Apelaciones' },
   { id: 'posts',    icon: 'lock',        label: 'Posts SFW' },
   { id: 'nsfw',     icon: 'alert-octagon', label: 'NSFW' },
   { id: 'comments', icon: 'message-square', label: 'Comentarios' },
@@ -26,6 +27,9 @@ export default function AdminScreen({ onBack, session }) {
   const [nsfw,    setNsfw]    = useState([]);
   const [search,  setSearch]  = useState('');
   const [busy,    setBusy]    = useState(true);
+  const [appeals, setAppeals] = useState([]);
+  const [scanBusy, setScanBusy] = useState(false);
+  const [scanResults, setScanResults] = useState([]);
 
   const load = useCallback(async () => {
     setBusy(true);
@@ -47,6 +51,13 @@ export default function AdminScreen({ onBack, session }) {
       setUsers(snap.users || {});
       setSecrets(all.filter((x) => !x.nsfw));
       setNsfw(all.filter((x) => x.nsfw));
+      setAppeals((snap.appeals || []).map((a) => ({
+        id: String(a.id),
+        username: a.username,
+        reason: a.reason,
+        status: a.status || 'pendiente',
+        createdAt: Number(a.createdAt || Date.now()),
+      })));
     } finally {
       setBusy(false);
     }
@@ -82,8 +93,27 @@ export default function AdminScreen({ onBack, session }) {
   };
 
   const verifyNsfw = async (username) => {
-    // pendiente endpoint dedicado
-    Alert.alert('Próximamente', 'La verificación NSFW se habilitará por endpoint.');
+    Alert.alert('Verificación manual', `Marca a @${username} como creador adulto desde backend en la próxima iteración.`);
+  };
+
+  const runNsfwAiScan = async () => {
+    setScanBusy(true);
+    try {
+      const res = await adminApi.scanNsfwMismatch(session.token);
+      setScanResults((res.items || []).map((row) => ({
+        id: String(row.id),
+        username: row.username,
+        title: row.title || 'Secreto',
+        content: row.content || '',
+        nsfw: Number(row.nsfw) === 1,
+        suggested: Number(row.suggested_nsfw) === 1,
+        score: Number(row.ai_score || 0),
+        reasons: Array.isArray(row.ai_reasons) ? row.ai_reasons : [],
+      })));
+    } catch (e) {
+      Alert.alert('No se pudo analizar', e.message || 'Error inesperado');
+    }
+    setScanBusy(false);
   };
 
   const deletePost = (id, isNsfw) => {
@@ -116,6 +146,7 @@ export default function AdminScreen({ onBack, session }) {
     comments: all.reduce((a, s) => a + (s.comments?.length || 0), 0),
     likes:    all.reduce((a, s) => a + s.likes, 0),
     banned:   Object.values(users).filter(u => u.banned).length,
+    appeals: appeals.length,
   };
 
   const STAT_CARDS = [
@@ -125,6 +156,7 @@ export default function AdminScreen({ onBack, session }) {
     { label: 'Comentarios', val: stats.comments, icon: 'message-circle',color: T.green },
     { label: 'Likes',       val: stats.likes,    icon: 'heart',         color: T.rose },
     { label: 'Suspendidos', val: stats.banned,   icon: 'slash',         color: '#ef4444' },
+    { label: 'Apelaciones', val: stats.appeals,  icon: 'mail',          color: '#f59e0b' },
   ];
 
   if (!session?.isAdmin) {
@@ -234,6 +266,22 @@ export default function AdminScreen({ onBack, session }) {
           })}
 
           {/* ── POSTS SFW ── */}
+          {view === 'appeals' && (<>
+            {!!appeals.length && <Text style={styles.appealHint}>Estas apelaciones fueron creadas por usuarios suspendidos desde pantalla de login.</Text>}
+            {fil(appeals).map((a) => (
+              <View key={a.id} style={styles.appealRow}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Text style={styles.appealUser}>@{a.username}</Text>
+                  <Tag label={String(a.status || 'pendiente').toUpperCase()} color={a.status === 'pendiente' ? '#f59e0b' : T.blue} />
+                </View>
+                <Text style={styles.appealDate}>{fullDate(a.createdAt)}</Text>
+                <Text style={styles.appealReason}>{a.reason}</Text>
+              </View>
+            ))}
+            {!fil(appeals).length && <EmptyState text="No hay apelaciones de suspensión" />}
+          </>)}
+
+          {/* ── POSTS SFW ── */}
           {view === 'posts' && fil(secrets).map(s => <AdminPostRow key={s.id} secret={s} onDelete={() => deletePost(s.id, false)} expanded />)}
           {view === 'posts' && !fil(secrets).length && <EmptyState text="No hay publicaciones SFW" />}
 
@@ -243,6 +291,17 @@ export default function AdminScreen({ onBack, session }) {
               <Feather name="alert-octagon" size={18} color="#c026d3" />
               <Text style={styles.nsfwBannerTxt}>Modera el contenido adulto. Elimina todo lo que viole los términos o sea ilegal.</Text>
             </View>
+            <TouchableOpacity onPress={runNsfwAiScan} style={styles.scanBtn}>
+              <Feather name="cpu" size={15} color="#a78bfa" />
+              <Text style={styles.scanBtnTxt}>{scanBusy ? 'Analizando…' : 'Revisar con IA si hay +18 fuera de NSFW'}</Text>
+            </TouchableOpacity>
+            {!!scanResults.length && scanResults.map((it) => (
+              <View key={`scan-${it.id}`} style={styles.scanRow}>
+                <Text style={styles.scanTitle}>@{it.username} · {it.nsfw ? 'Está en NSFW' : 'Está en SFW'} → IA sugiere {it.suggested ? 'NSFW' : 'SFW'} ({Math.round(it.score * 100)}%)</Text>
+                <Text style={styles.scanBody} numberOfLines={2}>{it.content}</Text>
+                {!!it.reasons.length && <Text style={styles.scanReasons}>Señales: {it.reasons.join(', ')}</Text>}
+              </View>
+            ))}
             {fil(nsfw).map(s => <AdminPostRow key={s.id} secret={s} onDelete={() => deletePost(s.id, true)} expanded nsfw />)}
             {!fil(nsfw).length && <EmptyState text="No hay publicaciones NSFW" />}
           </>)}
@@ -338,8 +397,19 @@ const styles = StyleSheet.create({
   userMeta:{ fontSize: 11, color: T.text3, marginTop: 3 },
   userActions:{ flexDirection: 'row', gap: 6, flexShrink: 0 },
   smallBtn:{ width: 30, height: 30, borderWidth: 1, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  appealHint: { color: T.text3, fontSize: 12, marginBottom: 10 },
+  appealRow: { backgroundColor: T.card, borderWidth: 1, borderColor: T.border, borderRadius: 12, padding: 12, marginBottom: 8 },
+  appealUser: { fontSize: 13, color: T.text, fontWeight: '700' },
+  appealDate: { color: T.text3, fontSize: 11, marginTop: 4 },
+  appealReason: { color: T.text2, fontSize: 13, marginTop: 8, lineHeight: 18 },
   nsfwBanner:{ flexDirection: 'row', gap: 10, backgroundColor: '#1a0e24', borderWidth: 1, borderColor: '#3d1a5a', borderRadius: 10, padding: 12, marginBottom: 14, alignItems: 'center' },
   nsfwBannerTxt:{ fontSize: 12, color: '#a78bfa', flex: 1, lineHeight: 16 },
+  scanBtn: { flexDirection: 'row', gap: 8, alignItems: 'center', backgroundColor: '#1f1330', borderWidth: 1, borderColor: '#4c1d95', padding: 10, borderRadius: 10, marginBottom: 10 },
+  scanBtnTxt: { color: '#c4b5fd', fontSize: 12, fontWeight: '700' },
+  scanRow: { backgroundColor: '#1a0e24', borderWidth: 1, borderColor: '#3d1a5a', borderRadius: 10, padding: 10, marginBottom: 8 },
+  scanTitle: { color: '#ddd6fe', fontSize: 12, fontWeight: '700' },
+  scanBody: { color: '#e9d5ff', fontSize: 12, marginTop: 4 },
+  scanReasons: { color: '#a78bfa', fontSize: 11, marginTop: 4 },
   postRow: { backgroundColor: T.card, borderWidth: 1, borderColor: T.border, borderRadius: 12, padding: 12, marginBottom: 8, flexDirection: 'row', gap: 10 },
   postMeta:{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 4 },
   postAuthor:{ fontSize: 12, fontWeight: '600', color: T.text2 },

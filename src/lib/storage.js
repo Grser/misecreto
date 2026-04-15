@@ -4,6 +4,7 @@ export const SK  = 'ms-secrets-v8';
 export const UK  = 'ms-users-v8';
 export const SSK = 'ms-sess-v8';
 export const NK  = 'ms-nsfw-v8';
+export const AK  = 'ms-appeals-v1';
 
 export const sGet = async (k) => {
   try { const v = await AsyncStorage.getItem(k); return v ? JSON.parse(v) : null; }

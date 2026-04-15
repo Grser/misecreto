@@ -1,5 +1,5 @@
 // src/lib/api.js
-import { sGet, sSet, UK, SK, NK, uid, hashStr, cleanSecrets, checkStorageConnection } from './storage';
+import { sGet, sSet, UK, SK, NK, AK, uid, hashStr, cleanSecrets, checkStorageConnection } from './storage';
 import { normalizeUsername } from './validation';
 
 const nowIso = () => new Date().toISOString();
@@ -97,6 +97,66 @@ const localAuth = {
 
     return { ok: true, token: `local:${user.id}`, user: userResponse(user) };
   },
+
+  requestAppeal: async (username, password, reason) => {
+    const clean = normalizeUsername(username);
+    const users = normalizeUsers(await sGet(UK));
+    const user = users[clean];
+    if (!user || user.passwordHash !== hashStr(String(password || ''))) {
+      throw new Error('Credenciales inválidas');
+    }
+    if (!user.banned) throw new Error('Tu cuenta no está suspendida');
+    const appealReason = String(reason || '').trim();
+    if (appealReason.length < 12) throw new Error('Explica el motivo con más detalle');
+
+    const appeals = (await sGet(AK)) || [];
+    appeals.unshift({
+      id: uid(),
+      username: clean,
+      reason: appealReason,
+      status: 'pendiente',
+      createdAt: Date.now(),
+    });
+    await sSet(AK, appeals);
+    return { ok: true };
+  },
+};
+
+const NSFW_TERMS = [
+  'sexo', 'sexual', 'desnuda', 'desnudo', 'desnudos', 'desnudas', 'xxx', 'onlyfans',
+  'porn', 'porno', 'fetiche', 'nudes', 'pack', 'hot', 'caliente', 'anal', 'oral',
+  'penetr', 'coger', 'follar', 'masturb', 'cum', 'semen', 'tetas', 'pene', 'vagina',
+];
+
+const localNsfwScan = async () => {
+  const sfw = cleanSecrets(await sGet(SK) || []);
+  const nsfw = cleanSecrets(await sGet(NK) || []);
+  const all = [...sfw, ...nsfw];
+
+  const classify = (text) => {
+    const normalized = String(text || '').toLowerCase();
+    const hits = NSFW_TERMS.filter((term) => normalized.includes(term));
+    const score = Math.min(1, hits.length * 0.18);
+    return { isAdult: hits.length > 0, score, hits };
+  };
+
+  const mismatches = all.map((item) => {
+    const out = classify(`${item.title || ''} ${item.text || ''}`);
+    if (!out.isAdult && item.nsfw) return { ...item, suggested_nsfw: false, aiScore: out.score, aiReasons: ['Poca señal +18'] };
+    if (out.isAdult && !item.nsfw) return { ...item, suggested_nsfw: true, aiScore: out.score, aiReasons: out.hits };
+    return null;
+  }).filter(Boolean);
+
+  return mismatches.map((x) => ({
+    id: x.id,
+    username: x.author,
+    content: x.text,
+    title: x.title || 'Secreto',
+    nsfw: x.nsfw ? 1 : 0,
+    suggested_nsfw: x.suggested_nsfw ? 1 : 0,
+    ai_score: Number(x.aiScore || 0),
+    ai_reasons: x.aiReasons || [],
+  }));
 };
 
 const localAdmin = {
@@ -135,6 +195,7 @@ const localAdmin = {
       ok: true,
       users: normalizeUsers(await sGet(UK)),
       items: [...cleanSecrets(await sGet(SK) || []), ...cleanSecrets(await sGet(NK) || [])],
+      appeals: (await sGet(AK) || []),
     };
   },
 
@@ -145,6 +206,12 @@ const localAdmin = {
     const n2 = cleanSecrets(await sGet(NK) || []).filter((x) => String(x.id) !== String(id));
     await sSet(SK, n1); await sSet(NK, n2);
     return { ok: true };
+  },
+
+  scanNsfwMismatch: async (token) => {
+    const actor = await getCurrentUserFromToken(token);
+    if (!actor.isAdmin) throw new Error('No autorizado');
+    return { ok: true, items: await localNsfwScan() };
   },
 };
 
@@ -197,6 +264,11 @@ export const authApi = {
   claimAdmin: async (token, code) => (hasRemote
     ? apiReq('auth.claim_admin', { method: 'POST', token, body: { code } })
     : (() => { throw new Error('Esta función requiere backend compartido'); })()),
+
+  requestAppeal: async (username, password, reason) => withRemoteFallback(
+    () => apiReq('auth.request_appeal', { method: 'POST', body: { username, password, reason } }),
+    () => localAuth.requestAppeal(username, password, reason),
+  ),
 };
 
 export const adminApi = {
@@ -218,6 +290,11 @@ export const adminApi = {
   deleteSecret: async (token, id) => withRemoteFallback(
     () => apiReq('admin.delete_secret', { method: 'POST', token, body: { id } }),
     () => localAdmin.deleteSecret(token, id),
+  ),
+
+  scanNsfwMismatch: async (token) => withRemoteFallback(
+    () => apiReq('admin.scan_nsfw_mismatch', { method: 'GET', token }),
+    () => localAdmin.scanNsfwMismatch(token),
   ),
 };
 

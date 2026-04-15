@@ -19,6 +19,22 @@ $userOut = static fn(array $u): array => [
     'nsfwVerified' => (int) ($u['nsfw_verified'] ?? 0) === 1,
 ];
 
+$nsfwTerms = ['sexo', 'sexual', 'desnuda', 'desnudo', 'desnudos', 'desnudas', 'xxx', 'onlyfans', 'porn', 'porno', 'fetiche', 'nudes', 'pack', 'hot', 'caliente', 'anal', 'oral', 'penetr', 'coger', 'follar', 'masturb', 'cum', 'semen', 'tetas', 'pene', 'vagina'];
+$classifyNsfw = static function (string $text) use ($nsfwTerms): array {
+    $normalized = mb_strtolower($text, 'UTF-8');
+    $hits = [];
+    foreach ($nsfwTerms as $term) {
+        if (str_contains($normalized, $term)) {
+            $hits[] = $term;
+        }
+    }
+    return [
+        'isAdult' => count($hits) > 0,
+        'score' => min(1, count($hits) * 0.18),
+        'hits' => $hits,
+    ];
+};
+
 if ($action === 'health') {
     $row = $pdo->query('SELECT 1 AS ok')->fetch();
     jsonResponse(['ok' => true, 'message' => 'Conexión básica a DB activa', 'db' => ['connected' => true, 'ping' => (int)($row['ok'] ?? 0) === 1]]);
@@ -68,6 +84,23 @@ if ($action === 'auth.claim_admin') {
 
     $stmt = $pdo->prepare('UPDATE users SET is_admin = 1 WHERE id = :id LIMIT 1');
     $stmt->execute(['id' => (int) $user['id']]);
+    jsonResponse(['ok' => true]);
+}
+
+if ($action === 'auth.request_appeal') {
+    $username = strtolower(trim((string) ($input['username'] ?? '')));
+    $password = (string) ($input['password'] ?? '');
+    $reason = trim((string) ($input['reason'] ?? ''));
+    if (strlen($reason) < 12) jsonResponse(['ok' => false, 'error' => 'Explica el motivo con más detalle'], 422);
+
+    $stmt = $pdo->prepare('SELECT id, password_hash, banned FROM users WHERE username = :u LIMIT 1');
+    $stmt->execute(['u' => $username]);
+    $user = $stmt->fetch();
+    if (!$user || !password_verify($password, (string) $user['password_hash'])) jsonResponse(['ok' => false, 'error' => 'Credenciales inválidas'], 401);
+    if ((int) ($user['banned'] ?? 0) !== 1) jsonResponse(['ok' => false, 'error' => 'Tu cuenta no está suspendida'], 422);
+
+    $ins = $pdo->prepare('INSERT INTO account_appeals (user_id, reason, status) VALUES (:uid, :reason, "pendiente")');
+    $ins->execute(['uid' => (int) $user['id'], 'reason' => $reason]);
     jsonResponse(['ok' => true]);
 }
 
@@ -146,8 +179,46 @@ if (str_starts_with($action, 'admin.')) {
                 'createdAt' => (int) $u['createdAt'],
             ];
         }
+        $appeals = $pdo->query('SELECT a.id, u.username, a.reason, a.status, UNIX_TIMESTAMP(a.created_at) * 1000 AS createdAt
+            FROM account_appeals a INNER JOIN users u ON u.id = a.user_id
+            ORDER BY a.created_at DESC LIMIT 300')->fetchAll();
+        jsonResponse(['ok' => true, 'users' => $usersByName, 'items' => $items, 'appeals' => $appeals]);
+    }
 
-        jsonResponse(['ok' => true, 'users' => $usersByName, 'items' => $items]);
+    if ($action === 'admin.scan_nsfw_mismatch') {
+        $items = $pdo->query('SELECT s.id, s.title, s.content, s.nsfw, s.created_at, u.username
+            FROM secrets s INNER JOIN users u ON u.id = s.user_id
+            ORDER BY s.created_at DESC LIMIT 1000')->fetchAll();
+        $mismatches = [];
+        foreach ($items as $item) {
+            $analysis = $classifyNsfw((string) ($item['title'] ?? '') . ' ' . (string) ($item['content'] ?? ''));
+            $isNsfw = (int) ($item['nsfw'] ?? 0) === 1;
+            if (!$analysis['isAdult'] && $isNsfw) {
+                $mismatches[] = [
+                    'id' => (int) $item['id'],
+                    'username' => (string) $item['username'],
+                    'title' => (string) $item['title'],
+                    'content' => (string) $item['content'],
+                    'nsfw' => 1,
+                    'suggested_nsfw' => 0,
+                    'ai_score' => (float) $analysis['score'],
+                    'ai_reasons' => ['Poca señal +18'],
+                ];
+            }
+            if ($analysis['isAdult'] && !$isNsfw) {
+                $mismatches[] = [
+                    'id' => (int) $item['id'],
+                    'username' => (string) $item['username'],
+                    'title' => (string) $item['title'],
+                    'content' => (string) $item['content'],
+                    'nsfw' => 0,
+                    'suggested_nsfw' => 1,
+                    'ai_score' => (float) $analysis['score'],
+                    'ai_reasons' => $analysis['hits'],
+                ];
+            }
+        }
+        jsonResponse(['ok' => true, 'items' => $mismatches]);
     }
 }
 
