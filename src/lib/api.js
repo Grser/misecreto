@@ -6,6 +6,21 @@ const nowIso = () => new Date().toISOString();
 const API_URL = process.env.EXPO_PUBLIC_API_URL || '';
 const hasRemote = /^https?:\/\//i.test(API_URL);
 
+const isNetworkError = (error) => {
+  const msg = String(error?.message || '').toLowerCase();
+  return msg.includes('failed to fetch') || msg.includes('network request failed');
+};
+
+const withRemoteFallback = async (remoteFn, localFn) => {
+  if (!hasRemote) return localFn();
+  try {
+    return await remoteFn();
+  } catch (error) {
+    if (!isNetworkError(error)) throw error;
+    return localFn();
+  }
+};
+
 const normalizeUsers = (users) => users || {};
 
 const normalizeToken = (token) => {
@@ -169,13 +184,15 @@ const localSecrets = {
 };
 
 export const authApi = {
-  login: async (username, password) => (hasRemote
-    ? apiReq('auth.login', { method: 'POST', body: { username, password } })
-    : localAuth.login(username, password)),
+  login: async (username, password) => withRemoteFallback(
+    () => apiReq('auth.login', { method: 'POST', body: { username, password } }),
+    () => localAuth.login(username, password),
+  ),
 
-  register: async (username, password, meta = {}) => (hasRemote
-    ? apiReq('auth.register', { method: 'POST', body: { username, password, ...meta } })
-    : localAuth.register(username, password, meta)),
+  register: async (username, password, meta = {}) => withRemoteFallback(
+    () => apiReq('auth.register', { method: 'POST', body: { username, password, ...meta } }),
+    () => localAuth.register(username, password, meta),
+  ),
 
   claimAdmin: async (token, code) => (hasRemote
     ? apiReq('auth.claim_admin', { method: 'POST', token, body: { code } })
@@ -183,38 +200,48 @@ export const authApi = {
 };
 
 export const adminApi = {
-  setUserBan: async (token, username, banned) => (hasRemote
-    ? apiReq('admin.set_user_ban', { method: 'POST', token, body: { username, banned } })
-    : localAdmin.setUserBan(token, username, banned)),
+  setUserBan: async (token, username, banned) => withRemoteFallback(
+    () => apiReq('admin.set_user_ban', { method: 'POST', token, body: { username, banned } }),
+    () => localAdmin.setUserBan(token, username, banned),
+  ),
 
-  setUserAdmin: async (token, username, isAdmin) => (hasRemote
-    ? apiReq('admin.set_user_admin', { method: 'POST', token, body: { username, is_admin: isAdmin } })
-    : localAdmin.setUserAdmin(token, username, isAdmin)),
+  setUserAdmin: async (token, username, isAdmin) => withRemoteFallback(
+    () => apiReq('admin.set_user_admin', { method: 'POST', token, body: { username, is_admin: isAdmin } }),
+    () => localAdmin.setUserAdmin(token, username, isAdmin),
+  ),
 
-  snapshot: async (token) => (hasRemote
-    ? apiReq('admin.snapshot', { method: 'GET', token })
-    : localAdmin.snapshot(token)),
+  snapshot: async (token) => withRemoteFallback(
+    () => apiReq('admin.snapshot', { method: 'GET', token }),
+    () => localAdmin.snapshot(token),
+  ),
 
-  deleteSecret: async (token, id) => (hasRemote
-    ? apiReq('admin.delete_secret', { method: 'POST', token, body: { id } })
-    : localAdmin.deleteSecret(token, id)),
+  deleteSecret: async (token, id) => withRemoteFallback(
+    () => apiReq('admin.delete_secret', { method: 'POST', token, body: { id } }),
+    () => localAdmin.deleteSecret(token, id),
+  ),
 };
 
 export const secretsApi = {
-  list: async (token) => (hasRemote
-    ? apiReq('secrets.list', { method: 'GET', token })
-    : localSecrets.list(token)),
+  list: async (token) => withRemoteFallback(
+    () => apiReq('secrets.list', { method: 'GET', token }),
+    () => localSecrets.list(token),
+  ),
 
-  create: async (token, data) => (hasRemote
-    ? apiReq('secrets.create', { method: 'POST', token, body: data })
-    : localSecrets.create(token, data)),
+  create: async (token, data) => withRemoteFallback(
+    () => apiReq('secrets.create', { method: 'POST', token, body: data }),
+    () => localSecrets.create(token, data),
+  ),
 };
 
 export const healthApi = {
   check: async () => {
-    if (hasRemote) return apiReq('health', { method: 'GET' });
-    const ok = await checkStorageConnection();
-    if (!ok) throw new Error('No se pudo conectar a la base local');
-    return { ok: true, message: 'Base local conectada' };
+    return withRemoteFallback(
+      () => apiReq('health', { method: 'GET' }),
+      async () => {
+        const ok = await checkStorageConnection();
+        if (!ok) throw new Error('No se pudo conectar a la base local');
+        return { ok: true, message: 'Base local conectada' };
+      },
+    );
   },
 };
