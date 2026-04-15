@@ -9,7 +9,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { T, COUNTRIES, GRADIENTS } from '../lib/theme';
-import { secretsApi, healthApi, adminApi } from '../lib/api';
+import { secretsApi, healthApi, adminApi, fetchComments } from '../lib/api';
 import { CntBadge, Tag, ActBtn } from '../components/Atoms';
 import { SecretCard, NsfwCard } from '../components/SecretCard';
 import CommentSheet from '../components/CommentSheet';
@@ -57,6 +57,7 @@ const toSecret = (row) => ({
   likedBy: [],
   dislikedBy: [],
   time: new Date(row.created_at).getTime(),
+  commentsCount: Number(row.comments_count || 0),
   comments: [],
   nsfw: Number(row.nsfw) === 1,
   title: row.title || '',
@@ -108,7 +109,7 @@ export default function FeedScreen({ session, onLogout, onOpenAdmin }) {
     load();
     (async () => {
       try {
-        await healthApi.check();
+        await healthApi.check(session.isAdmin ? session.userId : undefined);
         setDbStatus('connected');
       } catch {
         setDbStatus('error');
@@ -132,11 +133,6 @@ export default function FeedScreen({ session, onLogout, onOpenAdmin }) {
       sub.remove();
     };
   }, [load]);
-
-  const update = (all, forNsfw) => {
-    forNsfw ? setNsfw(all) : setSecrets(all);
-    if (active) setActive(all.find(x => x.id === active.id) || null);
-  };
 
   /* image picker */
   const pickImage = async () => {
@@ -171,9 +167,10 @@ export default function FeedScreen({ session, onLogout, onOpenAdmin }) {
     setPosting(true);
     try {
       await secretsApi.create(session.token, {
+        user_id: session.userId,
         title: isNsfw ? 'Secreto NSFW' : 'Secreto',
         content: draft.trim() || '[imagen]',
-        nsfw: isNsfw,
+        nsfw: isNsfw ? 1 : 0,
         color_idx: session.color || 0,
       });
       setDraft('');
@@ -195,7 +192,12 @@ export default function FeedScreen({ session, onLogout, onOpenAdmin }) {
   };
 
   const openComment = async (sec) => {
-    setActive({ ...sec });
+    try {
+      const comments = await fetchComments(sec.id);
+      setActive({ ...sec, comments });
+    } catch {
+      setActive({ ...sec, comments: [] });
+    }
   };
 
   const quickBanFromFeed = (username) => {
@@ -334,10 +336,12 @@ export default function FeedScreen({ session, onLogout, onOpenAdmin }) {
       <View style={[styles.topnav, isNsfw && styles.topnavNsfw]}>
         <Text style={styles.logo}>Mi<Text style={{ color: isNsfw ? '#c026d3' : T.blue }}>Secreto</Text></Text>
         <View style={{ flex: 1 }} />
-        <View style={[styles.dbPill, dbStatus === 'connected' ? styles.dbPillOk : styles.dbPillErr]}>
-          <View style={[styles.dbDot, dbStatus === 'connected' ? styles.dbDotOk : styles.dbDotErr]} />
-          <Text style={styles.dbTxt}>DB {dbStatus === 'checking' ? 'verificando...' : dbStatus === 'connected' ? 'conectada' : 'sin conexión'}</Text>
-        </View>
+        {session.isAdmin && (
+          <View style={[styles.dbPill, dbStatus === 'connected' ? styles.dbPillOk : styles.dbPillErr]}>
+            <View style={[styles.dbDot, dbStatus === 'connected' ? styles.dbDotOk : styles.dbDotErr]} />
+            <Text style={styles.dbTxt}>DB {dbStatus === 'checking' ? 'verificando...' : dbStatus === 'connected' ? 'conectada' : 'sin conexión'}</Text>
+          </View>
+        )}
         {session.isAdmin && (
           <TouchableOpacity onPress={onOpenAdmin} style={styles.adminBtn}>
             <Feather name="shield" size={14} color="#f87171" />
@@ -359,7 +363,7 @@ export default function FeedScreen({ session, onLogout, onOpenAdmin }) {
             ? <NsfwCard secret={s} session={session} onComment={openComment} onLike={() => toggleLike(s.id)} onBanAuthor={session.isAdmin ? quickBanFromFeed : null} />
             : <SecretCard secret={s} session={session} onComment={openComment} onLike={() => toggleLike(s.id)} onDislike={() => toggleDislike(s.id)} onBanAuthor={session.isAdmin ? quickBanFromFeed : null} />
           }
-          ListHeaderComponent={renderHeader()}
+          ListHeaderComponent={renderHeader}
           ListEmptyComponent={
             <View style={styles.empty}>
               <Feather name={tab === 'mios' ? 'lock' : isNsfw ? 'alert-octagon' : 'message-circle'} size={34} color={T.text3} />
@@ -392,7 +396,10 @@ export default function FeedScreen({ session, onLogout, onOpenAdmin }) {
       {active && (
         <CommentSheet
           secret={active} session={session}
-          onUpdate={all => update(all, isNsfw)}
+          onUpdate={async () => {
+            await load(true);
+            setActive(null);
+          }}
           onClose={() => setActive(null)}
           nsfw={isNsfw}
         />
