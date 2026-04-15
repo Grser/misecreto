@@ -1,5 +1,5 @@
 // src/screens/FeedScreen.js
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, TextInput,
   StyleSheet, RefreshControl, Modal, Image, ScrollView,
@@ -9,7 +9,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { T, COUNTRIES, GRADIENTS } from '../lib/theme';
-import { secretsApi, healthApi, adminApi, fetchComments } from '../lib/api';
+import { createSecret, fetchSecrets, healthApi, adminApi, fetchComments } from '../lib/api';
 import { CntBadge, Tag, ActBtn } from '../components/Atoms';
 import { SecretCard, NsfwCard } from '../components/SecretCard';
 import CommentSheet from '../components/CommentSheet';
@@ -70,6 +70,95 @@ const BOTTOM_TABS = [
   { id: 'nsfw',      icon: 'alert-octagon', label: 'NSFW', special: true },
 ];
 
+const WriteComposer = React.memo(function WriteComposer({
+  isNsfw,
+  sessionColor,
+  draft,
+  onChangeDraft,
+  photo,
+  duration,
+  acc,
+  showDur,
+  onPickImage,
+  onRemovePhoto,
+  onSetDuration,
+  onPost,
+  posting,
+}) {
+  return (
+    <View style={[styles.writeCard, isNsfw && styles.writeCardNsfw]}>
+      <View style={styles.writeTop}>
+        <EmojiAvatar colorIdx={sessionColor} size={36} nsfw={isNsfw} />
+        <TextInput
+          value={draft}
+          onChangeText={onChangeDraft}
+          placeholder={isNsfw ? 'Secreto adulto anónimo... 🔞' : 'Comparte tu secreto anónimamente...'}
+          placeholderTextColor={T.text3}
+          multiline
+          maxLength={500}
+          style={[styles.writeInput, isNsfw && { color: '#e9d5ff' }]}
+          textAlignVertical="top"
+          scrollEnabled={false}
+          blurOnSubmit={false}
+        />
+      </View>
+
+      {photo && (
+        <View style={styles.photoWrap}>
+          <Image source={{ uri: photo }} style={styles.photoImg} resizeMode="cover" />
+          <TouchableOpacity onPress={onRemovePhoto} style={styles.photoRemove}>
+            <Feather name="x" size={14} color="#fff" />
+          </TouchableOpacity>
+          {duration > 0 && (
+            <View style={styles.durBadge}>
+              <Feather name="clock" size={10} color="#fff" />
+              <Text style={styles.durBadgeTxt}>{DURATION_OPTS.find(d => d.value === duration)?.label}</Text>
+            </View>
+          )}
+        </View>
+      )}
+
+      {showDur && (
+        <View style={styles.durRow}>
+          <Text style={styles.durRowLabel}>⏱ Duración:</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+            {DURATION_OPTS.map(opt => (
+              <TouchableOpacity key={opt.value} onPress={() => onSetDuration(opt.value)}
+                style={[styles.durChip, duration === opt.value && { backgroundColor: acc, borderColor: acc }]}>
+                <Text style={[styles.durChipTxt, duration === opt.value && { color: '#fff' }]}>{opt.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      )}
+
+      <View style={[styles.writeFooter, { borderTopColor: isNsfw ? '#3d1a5a' : T.border }]}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <TouchableOpacity onPress={onPickImage} style={styles.imgBtn}>
+            <Feather name="image" size={18} color={photo ? acc : T.text3} />
+          </TouchableOpacity>
+          <View style={styles.anonTag}>
+            <Feather name={isNsfw ? 'alert-octagon' : 'lock'} size={11} color={isNsfw ? '#9333ea' : T.text3} />
+            <Text style={[styles.anonTxt, isNsfw && { color: '#9333ea' }]}>
+              {isNsfw ? 'Contenido adulto' : '100% anónimo'}
+            </Text>
+          </View>
+        </View>
+        <View style={styles.writeRight}>
+          <Text style={[styles.charCount, draft.length > 460 && { color: '#ef4444' }]}>{draft.length}/500</Text>
+          <TouchableOpacity
+            onPress={onPost}
+            disabled={(draft.trim().length < 1 && !photo) || posting}
+            style={[styles.postBtn, { backgroundColor: acc },
+              ((draft.trim().length < 1 && !photo) || posting) && { opacity: 0.4 }]}>
+            <Text style={styles.postBtnTxt}>{posting ? '...' : 'Publicar'}</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
+  );
+});
+
 export default function FeedScreen({ session, onLogout, onOpenAdmin }) {
   const [secrets,  setSecrets] = useState([]);
   const [nsfwSec,  setNsfw]    = useState([]);
@@ -94,8 +183,8 @@ export default function FeedScreen({ session, onLogout, onOpenAdmin }) {
   const load = useCallback(async (silent = false) => {
     if (!silent) setRefresh(true);
     try {
-      const res = await secretsApi.list(session.token);
-      const mapped = (res.items || []).map(toSecret);
+      const rows = await fetchSecrets();
+      const mapped = rows.map(toSecret);
       setSecrets(mapped.filter((x) => !x.nsfw));
       setNsfw(mapped.filter((x) => x.nsfw));
       setDbStatus('connected');
@@ -103,14 +192,16 @@ export default function FeedScreen({ session, onLogout, onOpenAdmin }) {
       setDbStatus('error');
     }
     if (!silent) setRefresh(false);
-  }, [session.token]);
+  }, []);
 
   React.useEffect(() => {
     load();
     (async () => {
       try {
-        await healthApi.check(session.isAdmin ? session.userId : undefined);
-        setDbStatus('connected');
+        if (session.isAdmin) {
+          await healthApi.check();
+          setDbStatus('connected');
+        }
       } catch {
         setDbStatus('error');
       }
@@ -166,7 +257,7 @@ export default function FeedScreen({ session, onLogout, onOpenAdmin }) {
     if ((!hasText && !hasPhoto) || posting) return;
     setPosting(true);
     try {
-      await secretsApi.create(session.token, {
+      await createSecret({
         user_id: session.userId,
         title: isNsfw ? 'Secreto NSFW' : 'Secreto',
         content: draft.trim() || '[imagen]',
@@ -220,10 +311,9 @@ export default function FeedScreen({ session, onLogout, onOpenAdmin }) {
 
   const list = getSorted();
 
-  /* ── Write card header ── */
-  const renderHeader = () => (
+  /* ── Write card header (memoized to keep TextInput focus stable) ── */
+  const listHeader = useMemo(() => (
     <>
-      {/* NSFW banner */}
       {isNsfw && (
         <View style={styles.nsfwBanner}>
           <Text style={{ fontSize: 18 }}>🔞</Text>
@@ -234,82 +324,22 @@ export default function FeedScreen({ session, onLogout, onOpenAdmin }) {
         </View>
       )}
 
-      {/* Write card */}
-      <View style={[styles.writeCard, isNsfw && styles.writeCardNsfw]}>
-        <View style={styles.writeTop}>
-          <EmojiAvatar colorIdx={session.color} size={36} nsfw={isNsfw} />
-          <TextInput
-            value={draft}
-            onChangeText={setDraft}
-            placeholder={isNsfw ? 'Secreto adulto anónimo... 🔞' : 'Comparte tu secreto anónimamente...'}
-            placeholderTextColor={T.text3}
-            multiline
-            maxLength={500}
-            style={[styles.writeInput, isNsfw && { color: '#e9d5ff' }]}
-            textAlignVertical="top"
-            scrollEnabled={false}
-            blurOnSubmit={false}
-          />
-        </View>
+      <WriteComposer
+        isNsfw={isNsfw}
+        sessionColor={session.color}
+        draft={draft}
+        onChangeDraft={setDraft}
+        photo={photo}
+        duration={duration}
+        acc={acc}
+        showDur={showDur}
+        onPickImage={pickImage}
+        onRemovePhoto={removePhoto}
+        onSetDuration={setDur}
+        onPost={post}
+        posting={posting}
+      />
 
-        {/* Photo preview */}
-        {photo && (
-          <View style={styles.photoWrap}>
-            <Image source={{ uri: photo }} style={styles.photoImg} resizeMode="cover" />
-            <TouchableOpacity onPress={removePhoto} style={styles.photoRemove}>
-              <Feather name="x" size={14} color="#fff" />
-            </TouchableOpacity>
-            {duration > 0 && (
-              <View style={styles.durBadge}>
-                <Feather name="clock" size={10} color="#fff" />
-                <Text style={styles.durBadgeTxt}>{DURATION_OPTS.find(d => d.value === duration)?.label}</Text>
-              </View>
-            )}
-          </View>
-        )}
-
-        {/* Duration picker */}
-        {showDur && (
-          <View style={styles.durRow}>
-            <Text style={styles.durRowLabel}>⏱ Duración:</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
-              {DURATION_OPTS.map(opt => (
-                <TouchableOpacity key={opt.value} onPress={() => setDur(opt.value)}
-                  style={[styles.durChip, duration === opt.value && { backgroundColor: acc, borderColor: acc }]}>
-                  <Text style={[styles.durChipTxt, duration === opt.value && { color: '#fff' }]}>{opt.label}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-        )}
-
-        {/* Footer */}
-        <View style={[styles.writeFooter, { borderTopColor: isNsfw ? '#3d1a5a' : T.border }]}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-            <TouchableOpacity onPress={pickImage} style={styles.imgBtn}>
-              <Feather name="image" size={18} color={photo ? acc : T.text3} />
-            </TouchableOpacity>
-            <View style={styles.anonTag}>
-              <Feather name={isNsfw ? 'alert-octagon' : 'lock'} size={11} color={isNsfw ? '#9333ea' : T.text3} />
-              <Text style={[styles.anonTxt, isNsfw && { color: '#9333ea' }]}>
-                {isNsfw ? 'Contenido adulto' : '100% anónimo'}
-              </Text>
-            </View>
-          </View>
-          <View style={styles.writeRight}>
-            <Text style={[styles.charCount, draft.length > 460 && { color: '#ef4444' }]}>{draft.length}/500</Text>
-            <TouchableOpacity
-              onPress={post}
-              disabled={(draft.trim().length < 1 && !photo) || posting}
-              style={[styles.postBtn, { backgroundColor: acc },
-                ((draft.trim().length < 1 && !photo) || posting) && { opacity: 0.4 }]}>
-              <Text style={styles.postBtnTxt}>{posting ? '...' : 'Publicar'}</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-
-      {/* Country filters */}
       <FlatList
         horizontal
         data={[{ code: 'all', name: 'Todos', flag: '' }, ...COUNTRIES]}
@@ -319,15 +349,15 @@ export default function FeedScreen({ session, onLogout, onOpenAdmin }) {
         contentContainerStyle={{ paddingHorizontal: 0, gap: 6 }}
         renderItem={({ item: c }) => (
           <TouchableOpacity onPress={() => setFilter(c.code)}
-            style={[styles.chip, filter === c.code && { backgroundColor: acc, borderColor: acc }]}>
-            <Text style={[styles.chipTxt, filter === c.code && { color: '#fff' }]}>
+            style={[styles.chip, filter === c.code && { backgroundColor: acc, borderColor: acc }]}> 
+            <Text style={[styles.chipTxt, filter === c.code && { color: '#fff' }]}> 
               {c.flag ? c.flag + ' ' : ''}{c.name}
             </Text>
           </TouchableOpacity>
         )}
       />
     </>
-  );
+  ), [isNsfw, session.color, draft, photo, duration, acc, showDur, posting, filter]);
 
   return (
     <SafeAreaView style={[styles.root, isNsfw && { backgroundColor: '#100818' }]} edges={['top']}>
@@ -363,7 +393,7 @@ export default function FeedScreen({ session, onLogout, onOpenAdmin }) {
             ? <NsfwCard secret={s} session={session} onComment={openComment} onLike={() => toggleLike(s.id)} onBanAuthor={session.isAdmin ? quickBanFromFeed : null} />
             : <SecretCard secret={s} session={session} onComment={openComment} onLike={() => toggleLike(s.id)} onDislike={() => toggleDislike(s.id)} onBanAuthor={session.isAdmin ? quickBanFromFeed : null} />
           }
-          ListHeaderComponent={renderHeader}
+          ListHeaderComponent={listHeader}
           ListEmptyComponent={
             <View style={styles.empty}>
               <Feather name={tab === 'mios' ? 'lock' : isNsfw ? 'alert-octagon' : 'message-circle'} size={34} color={T.text3} />
