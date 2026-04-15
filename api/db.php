@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 $dbHost = 'db.clawn.net';
 $dbName = 'misecreto';
-$dbUser = 'TU_USUARIO';
-$dbPass = 'TU_PASSWORD';
+$dbUser = 'conexiones';
+$dbPass = '1234';
 $dbCharset = 'utf8mb4';
 
 $dsn = sprintf('mysql:host=%s;dbname=%s;charset=%s', $dbHost, $dbName, $dbCharset);
