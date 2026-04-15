@@ -18,5 +18,6 @@ return [
         'app_key' => (string) $env('APP_KEY', ''),
         'token_ttl' => (int) $env('TOKEN_TTL_SECONDS', '1209600'),
         'allowed_origins' => array_filter(array_map('trim', explode(',', (string) $env('ALLOWED_ORIGINS', '')))),
+        'admin_claim_code' => (string) $env('ADMIN_CLAIM_CODE', ''),
     ],
 ];

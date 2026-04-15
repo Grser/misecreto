@@ -10,7 +10,6 @@ import { Feather } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { T, COUNTRIES, GRADIENTS } from '../lib/theme';
 import { secretsApi, healthApi, adminApi } from '../lib/api';
-import { UK, sGet, sSet } from '../lib/storage';
 import { CntBadge, Tag, ActBtn } from '../components/Atoms';
 import { SecretCard, NsfwCard } from '../components/SecretCard';
 import CommentSheet from '../components/CommentSheet';
@@ -208,11 +207,6 @@ export default function FeedScreen({ session, onLogout, onOpenAdmin }) {
         text: 'Suspender', style: 'destructive', onPress: async () => {
           try {
             await adminApi.setUserBan(session.token, username, true);
-            const users = (await sGet(UK)) || {};
-            if (users[username]) {
-              users[username] = { ...users[username], banned: true };
-              await sSet(UK, users);
-            }
             Alert.alert('Usuario suspendido', `@${username} fue suspendido correctamente.`);
           } catch (e) {
             Alert.alert('No se pudo suspender', e.message || 'Error desconocido');

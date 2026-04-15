@@ -1,8 +1,10 @@
 // src/lib/api.js
 import { sGet, sSet, UK, SK, NK, uid, hashStr, cleanSecrets, checkStorageConnection } from './storage';
-import { normalizeUsername, validateRegisterInput } from './validation';
+import { normalizeUsername } from './validation';
 
 const nowIso = () => new Date().toISOString();
+const API_URL = process.env.EXPO_PUBLIC_API_URL || '';
+const hasRemote = /^https?:\/\//i.test(API_URL);
 
 const normalizeUsers = (users) => users || {};
 
@@ -23,6 +25,20 @@ const userResponse = (user) => ({
   nsfwVerified: !!user.nsfwVerified,
 });
 
+const apiReq = async (action, { method = 'GET', token, body } = {}) => {
+  const url = `${API_URL}${API_URL.includes('?') ? '&' : '?'}action=${encodeURIComponent(action)}`;
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const res = await fetch(url, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || json.ok === false) throw new Error(json.error || 'Error de servidor');
+  return json;
+};
+
 const getCurrentUserFromToken = async (token) => {
   const userId = normalizeToken(token);
   if (!userId) throw new Error('No autorizado');
@@ -34,7 +50,7 @@ const getCurrentUserFromToken = async (token) => {
   return user;
 };
 
-export const authApi = {
+const localAuth = {
   login: async (username, password) => {
     const clean = normalizeUsername(username);
     const users = normalizeUsers(await sGet(UK));
@@ -43,98 +59,37 @@ export const authApi = {
     if (!user || user.passwordHash !== hashStr(String(password || ''))) {
       throw new Error('Credenciales inválidas');
     }
-    if (user.banned) {
-      throw new Error('Tu cuenta está suspendida');
-    }
+    if (user.banned) throw new Error('Tu cuenta está suspendida');
 
-    return {
-      ok: true,
-      token: `local:${user.id}`,
-      user: userResponse(user),
-    };
+    return { ok: true, token: `local:${user.id}`, user: userResponse(user) };
   },
 
   register: async (username, password, { color, country } = {}) => {
     const clean = String(username || '').trim().toLowerCase();
-    if (clean.length < 3 || String(password || '').length < 4) {
-      throw new Error('Datos inválidos');
-    }
+    if (clean.length < 3 || String(password || '').length < 4) throw new Error('Datos inválidos');
 
     const users = normalizeUsers(await sGet(UK));
-    if (users[clean]) {
-      throw new Error('Usuario ya existe');
-    }
+    if (users[clean]) throw new Error('Usuario ya existe');
 
     const user = {
-      id: Date.now(),
-      username: clean,
-      passwordHash: hashStr(String(password || '')),
-      isAdmin: false,
-      color: Number.isFinite(color) ? color : 0,
-      country: country || 'us',
-      banned: false,
-      nsfwVerified: false,
-      createdAt: Date.now(),
+      id: Date.now(), username: clean, passwordHash: hashStr(String(password || '')),
+      isAdmin: false, color: Number.isFinite(color) ? color : 0, country: country || 'us',
+      banned: false, nsfwVerified: false, createdAt: Date.now(),
     };
 
     users[clean] = user;
     await sSet(UK, users);
 
-    return {
-      ok: true,
-      token: `local:${user.id}`,
-      user: userResponse(user),
-    };
-  },
-
-  resetLocalUser: async (username, newPassword) => {
-    const clean = String(username || '').trim().toLowerCase();
-    const nextPass = String(newPassword || '');
-    if (!clean || !nextPass) {
-      throw new Error('Datos inválidos');
-    }
-
-    const users = normalizeUsers(await sGet(UK));
-    const user = users[clean];
-    if (!user) {
-      throw new Error('Usuario no encontrado');
-    }
-
-    users[clean] = {
-      ...user,
-      passwordHash: hashStr(nextPass),
-    };
-    await sSet(UK, users);
-
-    return { ok: true };
-  },
-
-  deleteLocalUser: async (username) => {
-    const clean = String(username || '').trim().toLowerCase();
-    if (!clean) {
-      throw new Error('Datos inválidos');
-    }
-
-    const users = normalizeUsers(await sGet(UK));
-    if (!users[clean]) {
-      throw new Error('Usuario no encontrado');
-    }
-
-    delete users[clean];
-    await sSet(UK, users);
-
-    return { ok: true };
+    return { ok: true, token: `local:${user.id}`, user: userResponse(user) };
   },
 };
 
-export const adminApi = {
+const localAdmin = {
   setUserBan: async (token, username, banned) => {
     const actor = await getCurrentUserFromToken(token);
     if (!actor.isAdmin) throw new Error('No autorizado');
 
     const clean = String(username || '').trim().toLowerCase();
-    if (!clean) throw new Error('Usuario inválido');
-
     const users = normalizeUsers(await sGet(UK));
     const target = users[clean];
     if (!target) throw new Error('Usuario no encontrado');
@@ -149,8 +104,6 @@ export const adminApi = {
     if (!actor.isAdmin) throw new Error('No autorizado');
 
     const clean = String(username || '').trim().toLowerCase();
-    if (!clean) throw new Error('Usuario inválido');
-
     const users = normalizeUsers(await sGet(UK));
     const target = users[clean];
     if (!target) throw new Error('Usuario no encontrado');
@@ -159,28 +112,39 @@ export const adminApi = {
     await sSet(UK, users);
     return { ok: true };
   },
+
+  snapshot: async (token) => {
+    const user = await getCurrentUserFromToken(token);
+    if (!user.isAdmin) throw new Error('No autorizado');
+    return {
+      ok: true,
+      users: normalizeUsers(await sGet(UK)),
+      items: [...cleanSecrets(await sGet(SK) || []), ...cleanSecrets(await sGet(NK) || [])],
+    };
+  },
+
+  deleteSecret: async (token, id) => {
+    const actor = await getCurrentUserFromToken(token);
+    if (!actor.isAdmin) throw new Error('No autorizado');
+    const n1 = cleanSecrets(await sGet(SK) || []).filter((x) => String(x.id) !== String(id));
+    const n2 = cleanSecrets(await sGet(NK) || []).filter((x) => String(x.id) !== String(id));
+    await sSet(SK, n1); await sSet(NK, n2);
+    return { ok: true };
+  },
 };
 
-export const secretsApi = {
+const localSecrets = {
   list: async (token) => {
     const user = await getCurrentUserFromToken(token);
     const sfw = cleanSecrets(await sGet(SK) || []);
     const nsfw = cleanSecrets(await sGet(NK) || []);
     const all = [...sfw, ...nsfw];
 
-    const items = all
-      .slice()
-      .sort((a, b) => Number(b.time || 0) - Number(a.time || 0))
-      .map((row) => ({
-        id: row.id,
-        title: row.title || 'Secreto',
-        content: row.text || '',
-        nsfw: row.nsfw ? 1 : 0,
-        color_idx: Number(row.color || 0),
-        created_at: row.time ? new Date(row.time).toISOString() : nowIso(),
-        username: row.author || user.username,
-        likes: Number(row.likes || 0),
-      }));
+    const items = all.slice().sort((a, b) => Number(b.time || 0) - Number(a.time || 0)).map((row) => ({
+      id: row.id, title: row.title || 'Secreto', content: row.text || '', nsfw: row.nsfw ? 1 : 0,
+      color_idx: Number(row.color || 0), created_at: row.time ? new Date(row.time).toISOString() : nowIso(),
+      username: row.author || user.username, likes: Number(row.likes || 0),
+    }));
 
     return { ok: true, user: userResponse(user), items };
   },
@@ -193,35 +157,62 @@ export const secretsApi = {
 
     const targetKey = data?.nsfw ? NK : SK;
     const list = cleanSecrets(await sGet(targetKey) || []);
-    const id = uid();
-
     list.unshift({
-      id,
-      text: content,
-      photo: null,
-      expiresAt: null,
-      durationMinutes: 0,
-      author: user.username,
-      color: Number(data?.color_idx || 0),
-      country: 'us',
-      likes: 0,
-      dislikes: 0,
-      views: 0,
-      likedBy: [],
-      dislikedBy: [],
-      time: Date.now(),
-      comments: [],
-      nsfw: !!data?.nsfw,
-      title,
+      id: uid(), text: content, photo: null, expiresAt: null, durationMinutes: 0, author: user.username,
+      color: Number(data?.color_idx || 0), country: 'us', likes: 0, dislikes: 0, views: 0,
+      likedBy: [], dislikedBy: [], time: Date.now(), comments: [], nsfw: !!data?.nsfw, title,
     });
 
     await sSet(targetKey, list);
-    return { ok: true, id };
+    return { ok: true };
   },
+};
+
+export const authApi = {
+  login: async (username, password) => (hasRemote
+    ? apiReq('auth.login', { method: 'POST', body: { username, password } })
+    : localAuth.login(username, password)),
+
+  register: async (username, password, meta = {}) => (hasRemote
+    ? apiReq('auth.register', { method: 'POST', body: { username, password, ...meta } })
+    : localAuth.register(username, password, meta)),
+
+  claimAdmin: async (token, code) => (hasRemote
+    ? apiReq('auth.claim_admin', { method: 'POST', token, body: { code } })
+    : (() => { throw new Error('Esta función requiere backend compartido'); })()),
+};
+
+export const adminApi = {
+  setUserBan: async (token, username, banned) => (hasRemote
+    ? apiReq('admin.set_user_ban', { method: 'POST', token, body: { username, banned } })
+    : localAdmin.setUserBan(token, username, banned)),
+
+  setUserAdmin: async (token, username, isAdmin) => (hasRemote
+    ? apiReq('admin.set_user_admin', { method: 'POST', token, body: { username, is_admin: isAdmin } })
+    : localAdmin.setUserAdmin(token, username, isAdmin)),
+
+  snapshot: async (token) => (hasRemote
+    ? apiReq('admin.snapshot', { method: 'GET', token })
+    : localAdmin.snapshot(token)),
+
+  deleteSecret: async (token, id) => (hasRemote
+    ? apiReq('admin.delete_secret', { method: 'POST', token, body: { id } })
+    : localAdmin.deleteSecret(token, id)),
+};
+
+export const secretsApi = {
+  list: async (token) => (hasRemote
+    ? apiReq('secrets.list', { method: 'GET', token })
+    : localSecrets.list(token)),
+
+  create: async (token, data) => (hasRemote
+    ? apiReq('secrets.create', { method: 'POST', token, body: data })
+    : localSecrets.create(token, data)),
 };
 
 export const healthApi = {
   check: async () => {
+    if (hasRemote) return apiReq('health', { method: 'GET' });
     const ok = await checkStorageConnection();
     if (!ok) throw new Error('No se pudo conectar a la base local');
     return { ok: true, message: 'Base local conectada' };
