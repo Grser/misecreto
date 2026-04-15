@@ -1,6 +1,7 @@
 // src/components/SecretCard.js
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
+import { View, Text, StyleSheet, Image } from 'react-native';
+import TouchableOpacity from './TouchableOpacityCompat';
 import { Feather } from '@expo/vector-icons';
 import { T, cOf, COUNTRY_CLR, GRADIENTS } from '../lib/theme';
 import { timeAgo } from '../lib/storage';

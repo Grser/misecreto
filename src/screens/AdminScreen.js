@@ -1,9 +1,10 @@
 // src/screens/AdminScreen.js
 import React, { useState, useCallback, useEffect } from 'react';
 import {
-  View, Text, FlatList, TouchableOpacity, TextInput,
+  View, Text, FlatList, TextInput,
   StyleSheet, Alert, ScrollView,
 } from 'react-native';
+import TouchableOpacity from '../components/TouchableOpacityCompat';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { T, COUNTRIES, cOf, COUNTRY_CLR } from '../lib/theme';
