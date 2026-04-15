@@ -8,7 +8,9 @@ const ensureBaseUrl = () => {
 
 const parseJson = async (res) => {
   const payload = await res.json().catch(() => null);
-  if (!payload) throw new Error('Respuesta inválida del servidor');
+  if (!payload) {
+    throw new Error('Respuesta inválida del servidor');
+  }
   if (!res.ok || payload.ok === false) {
     throw new Error(payload.error || `HTTP ${res.status}`);
   }
@@ -17,15 +19,20 @@ const parseJson = async (res) => {
 
 const request = async (path, options = {}) => {
   ensureBaseUrl();
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
-    ...options,
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: options.method || 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(options.headers || {}),
+    },
+    body: options.body,
   });
-  return parseJson(res);
+
+  return parseJson(response);
 };
 
 export const registerUser = async (payload) => {
-  const data = await request('/register.php', {
+  const data = await request('/auth/register', {
     method: 'POST',
     body: JSON.stringify(payload),
   });
@@ -33,7 +40,7 @@ export const registerUser = async (payload) => {
 };
 
 export const loginUser = async (payload) => {
-  const data = await request('/login.php', {
+  const data = await request('/auth/login', {
     method: 'POST',
     body: JSON.stringify(payload),
   });
@@ -41,12 +48,12 @@ export const loginUser = async (payload) => {
 };
 
 export const fetchSecrets = async () => {
-  const data = await request('/secrets.php');
+  const data = await request('/secrets');
   return Array.isArray(data.secrets) ? data.secrets : [];
 };
 
 export const createSecret = async (payload) => {
-  const data = await request('/secrets.php', {
+  const data = await request('/secrets', {
     method: 'POST',
     body: JSON.stringify(payload),
   });
@@ -54,21 +61,16 @@ export const createSecret = async (payload) => {
 };
 
 export const fetchComments = async (secretId) => {
-  const data = await request(`/comments.php?secret_id=${encodeURIComponent(secretId)}`);
+  const data = await request(`/comments/${encodeURIComponent(secretId)}`);
   return Array.isArray(data.comments) ? data.comments : [];
 };
 
 export const createComment = async (payload) => {
-  const data = await request('/comments.php', {
+  const data = await request('/comments', {
     method: 'POST',
     body: JSON.stringify(payload),
   });
   return data.comment;
-};
-
-export const fetchAdminStatus = async (userId) => {
-  const data = await request(`/admin-status.php?user_id=${encodeURIComponent(userId)}`);
-  return data;
 };
 
 export const authApi = {
@@ -106,10 +108,5 @@ export const adminApi = {
 };
 
 export const healthApi = {
-  check: async (userId) => {
-    if (userId) {
-      return fetchAdminStatus(userId);
-    }
-    return request('/secrets.php');
-  },
+  check: async () => request('/health'),
 };
