@@ -1,8 +1,9 @@
 import React, { useState, useRef, useMemo } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, FlatList,
+  View, Text, TextInput, FlatList,
   KeyboardAvoidingView, Platform, StyleSheet, Modal,
 } from 'react-native';
+import TouchableOpacity from './TouchableOpacityCompat';
 import { Feather } from '@expo/vector-icons';
 import { T } from '../lib/theme';
 import { timeAgo } from '../lib/storage';

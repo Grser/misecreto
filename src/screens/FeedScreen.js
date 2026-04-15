@@ -1,10 +1,11 @@
 // src/screens/FeedScreen.js
 import React, { useState, useCallback, useMemo } from 'react';
 import {
-  View, Text, FlatList, TouchableOpacity, TextInput,
+  View, Text, FlatList, TextInput,
   StyleSheet, RefreshControl, Modal, Image, ScrollView,
   Platform, Alert, AppState,
 } from 'react-native';
+import TouchableOpacity from '../components/TouchableOpacityCompat';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';

@@ -1,9 +1,10 @@
 // src/screens/AuthScreen.js
 import React, { useState } from 'react';
 import {
-  View, Text, TouchableOpacity, ScrollView,
+  View, Text, ScrollView,
   KeyboardAvoidingView, Platform, StyleSheet, Modal, TextInput, Alert,
 } from 'react-native';
+import TouchableOpacity from '../components/TouchableOpacityCompat';
 import { Feather } from '@expo/vector-icons';
 import { T, COUNTRIES } from '../lib/theme';
 import { authApi } from '../lib/api';

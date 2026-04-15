@@ -1,9 +1,10 @@
 // src/components/Atoms.js
 import React, { useState } from 'react';
 import {
-  View, Text, TouchableOpacity, TextInput,
+  View, Text, TextInput,
   StyleSheet, ActivityIndicator,
 } from 'react-native';
+import TouchableOpacity from './TouchableOpacityCompat';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { T, GRADIENTS, COUNTRY_CLR, cOf } from '../lib/theme';
 
