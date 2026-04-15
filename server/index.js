@@ -7,7 +7,7 @@ const secretsRoutes = require('./routes/secrets');
 const commentsRoutes = require('./routes/comments');
 
 const app = express();
-const port = Number(process.env.PORT || 3001);
+const port = Number(process.env.PORT || 8081);
 
 app.use(cors());
 app.use(express.json());
