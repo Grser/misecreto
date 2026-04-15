@@ -63,6 +63,10 @@ function ensureSchema(PDO $pdo): void
             username VARCHAR(80) NOT NULL UNIQUE,
             password_hash VARCHAR(255) NOT NULL,
             is_admin TINYINT(1) NOT NULL DEFAULT 0,
+            color TINYINT UNSIGNED NOT NULL DEFAULT 0,
+            country VARCHAR(4) NOT NULL DEFAULT 'us',
+            banned TINYINT(1) NOT NULL DEFAULT 0,
+            nsfw_verified TINYINT(1) NOT NULL DEFAULT 0,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
 
@@ -113,6 +117,21 @@ function ensureSchema(PDO $pdo): void
 
     foreach ($queries as $sql) {
         $pdo->exec($sql);
+    }
+
+    ensureColumn($pdo, 'users', 'color', "ALTER TABLE users ADD COLUMN color TINYINT UNSIGNED NOT NULL DEFAULT 0 AFTER is_admin");
+    ensureColumn($pdo, 'users', 'country', "ALTER TABLE users ADD COLUMN country VARCHAR(4) NOT NULL DEFAULT 'us' AFTER color");
+    ensureColumn($pdo, 'users', 'banned', "ALTER TABLE users ADD COLUMN banned TINYINT(1) NOT NULL DEFAULT 0 AFTER country");
+    ensureColumn($pdo, 'users', 'nsfw_verified', "ALTER TABLE users ADD COLUMN nsfw_verified TINYINT(1) NOT NULL DEFAULT 0 AFTER banned");
+}
+
+function ensureColumn(PDO $pdo, string $table, string $column, string $alterSql): void
+{
+    $stmt = $pdo->prepare('SELECT COUNT(*) AS c FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table AND COLUMN_NAME = :column');
+    $stmt->execute(['table' => $table, 'column' => $column]);
+    $exists = (int) ($stmt->fetch()['c'] ?? 0) > 0;
+    if (!$exists) {
+        $pdo->exec($alterSql);
     }
 }
 

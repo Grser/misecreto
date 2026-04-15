@@ -7,7 +7,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { T, COUNTRIES, cOf, COUNTRY_CLR } from '../lib/theme';
-import { sGet, sSet, SK, NK, UK, fullDate, timeAgo, cleanSecrets } from '../lib/storage';
+import { fullDate, timeAgo } from '../lib/storage';
 import { Avatar, CntBadge, Tag, Card, Spinner, BtnDanger } from '../components/Atoms';
 import { adminApi } from '../lib/api';
 
@@ -29,10 +29,28 @@ export default function AdminScreen({ onBack, session }) {
 
   const load = useCallback(async () => {
     setBusy(true);
-    const [u, s, n] = await Promise.all([sGet(UK), sGet(SK), sGet(NK)]);
-    setUsers(u || {}); setSecrets(cleanSecrets(s)); setNsfw(cleanSecrets(n));
-    setBusy(false);
-  }, []);
+    try {
+      const snap = await adminApi.snapshot(session.token);
+      const all = (snap.items || []).map((row) => ({
+        id: String(row.id),
+        text: row.content || '',
+        author: row.username,
+        color: Number(row.color_idx || 0),
+        country: 'us',
+        likes: Number(row.likes || 0),
+        views: 0,
+        time: new Date(row.created_at).getTime(),
+        comments: [],
+        nsfw: Number(row.nsfw) === 1,
+        title: row.title || 'Secreto',
+      }));
+      setUsers(snap.users || {});
+      setSecrets(all.filter((x) => !x.nsfw));
+      setNsfw(all.filter((x) => x.nsfw));
+    } finally {
+      setBusy(false);
+    }
+  }, [session.token]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -43,8 +61,7 @@ export default function AdminScreen({ onBack, session }) {
       [{ text: 'Cancelar' }, {
         text: 'Confirmar', style: 'destructive', onPress: async () => {
           await adminApi.setUserBan(session.token, username, !users[username].banned);
-          const u = { ...users, [username]: { ...users[username], banned: !users[username].banned } };
-          await sSet(UK, u); setUsers(u);
+          await load();
         }
       }]
     );
@@ -58,27 +75,23 @@ export default function AdminScreen({ onBack, session }) {
       [{ text: 'Cancelar' }, {
         text: 'Confirmar', style: 'destructive', onPress: async () => {
           await adminApi.setUserAdmin(session.token, username, willBeAdmin);
-          const u = { ...users, [username]: { ...users[username], isAdmin: willBeAdmin } };
-          await sSet(UK, u); setUsers(u);
+          await load();
         },
       }]
     );
   };
 
   const verifyNsfw = async (username) => {
-    const u = { ...users, [username]: { ...users[username], nsfwVerified: !users[username].nsfwVerified } };
-    await sSet(UK, u); setUsers(u);
+    // pendiente endpoint dedicado
+    Alert.alert('Próximamente', 'La verificación NSFW se habilitará por endpoint.');
   };
 
   const deletePost = (id, isNsfw) => {
     Alert.alert('Eliminar publicación', '¿Estás seguro?', [
       { text: 'Cancelar' },
       { text: 'Eliminar', style: 'destructive', onPress: async () => {
-        const sk = isNsfw ? NK : SK;
-        const list = isNsfw ? nsfw : secrets;
-        const updated = list.filter(x => x.id !== id);
-        await sSet(sk, updated);
-        isNsfw ? setNsfw(updated) : setSecrets(updated);
+        await adminApi.deleteSecret(session.token, id);
+        await load();
       }},
     ]);
   };
@@ -87,12 +100,7 @@ export default function AdminScreen({ onBack, session }) {
     Alert.alert('Eliminar comentario', '¿Estás seguro?', [
       { text: 'Cancelar' },
       { text: 'Eliminar', style: 'destructive', onPress: async () => {
-        const sk = isNsfw ? NK : SK;
-        const list = isNsfw ? [...nsfw] : [...secrets];
-        const s = list.find(x => x.id === secretId); if (!s) return;
-        s.comments = s.comments.filter(c => c.id !== cmId);
-        await sSet(sk, list);
-        isNsfw ? setNsfw(list) : setSecrets(list);
+        Alert.alert('Próximamente', 'La moderación de comentarios se habilitará por endpoint.');
       }},
     ]);
   };
